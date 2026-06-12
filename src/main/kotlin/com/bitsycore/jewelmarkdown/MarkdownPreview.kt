@@ -12,12 +12,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.markdown.standalone.ProvideMarkdownStyling
+import org.jetbrains.jewel.intui.markdown.standalone.dark as markdownRendererDark
+import org.jetbrains.jewel.intui.markdown.standalone.light as markdownRendererLight
+import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.tables.dark as tableStylingDark
+import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.tables.light as tableStylingLight
 import org.jetbrains.jewel.markdown.LazyMarkdown
 import org.jetbrains.jewel.markdown.MarkdownBlock
 import org.jetbrains.jewel.markdown.MarkdownMode
 import org.jetbrains.jewel.markdown.extensions.autolink.AutolinkProcessorExtension
-import org.jetbrains.jewel.markdown.extensions.github.alerts.AlertStyling
 import org.jetbrains.jewel.markdown.extensions.github.alerts.GitHubAlertProcessorExtension
 import org.jetbrains.jewel.markdown.extensions.github.alerts.GitHubAlertRendererExtension
 import org.jetbrains.jewel.markdown.extensions.github.strikethrough.GitHubStrikethroughProcessorExtension
@@ -27,20 +31,12 @@ import org.jetbrains.jewel.markdown.extensions.github.tables.GitHubTableProcesso
 import org.jetbrains.jewel.markdown.extensions.github.tables.GitHubTableRendererExtension
 import org.jetbrains.jewel.markdown.processing.MarkdownProcessor
 import org.jetbrains.jewel.markdown.rendering.MarkdownBlockRenderer
-import org.jetbrains.jewel.markdown.rendering.MarkdownStyling
 import org.jetbrains.jewel.ui.component.VerticallyScrollableContainer
-import org.jetbrains.jewel.intui.markdown.standalone.dark as markdownRendererDark
-import org.jetbrains.jewel.intui.markdown.standalone.light as markdownRendererLight
-import org.jetbrains.jewel.intui.markdown.standalone.styling.dark as markdownStylingDark
-import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.alerts.dark as alertStylingDark
-import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.alerts.light as alertStylingLight
-import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.tables.dark as tableStylingDark
-import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.tables.light as tableStylingLight
-import org.jetbrains.jewel.intui.markdown.standalone.styling.light as markdownStylingLight
 
-// Live Markdown preview. Parses the text off the UI thread and renders it with
-// Jewel's renderer, wired for GitHub-flavored Markdown (tables, alerts,
-// strikethrough, autolinks). Styling follows the current dark/light theme.
+// Live Markdown preview. Parses the text off the UI thread and renders it with Jewel's
+// renderer, wired for GitHub-flavored Markdown (tables, alerts, strikethrough, autolinks) and
+// code-block syntax highlighting. Styling follows the current dark/light theme and uses the
+// corrected block-quote/code/alert styles for readability.
 @Composable
 fun MarkdownPreview(
 	inText: String,
@@ -48,24 +44,25 @@ fun MarkdownPreview(
 	inModifier: Modifier = Modifier,
 	inOnUrlClick: (String) -> Unit = { openUrl(it) },
 ) {
-	// Base Markdown styling for the active theme.
-	val vStyling = remember(inIsDark) {
-		if (inIsDark) MarkdownStyling.markdownStylingDark() else MarkdownStyling.markdownStylingLight()
+	val vBaseStyle = JewelTheme.defaultTextStyle
+	val vEditorStyle = JewelTheme.editorTextStyle
+	val vBorder = JewelTheme.globalColors.borders.normal
+
+	// Base Markdown styling for the active theme (readable quotes + bordered code blocks).
+	val vStyling = remember(inIsDark, vBaseStyle, vEditorStyle, vBorder) {
+		buildMarkdownStyling(inIsDark, vBaseStyle, vEditorStyle, vBorder)
 	}
 
 	// Block renderer including the GFM table/alert/strikethrough rendering extensions.
-	// The inline renderer (needed for strikethrough) is derived from this list.
 	val vRenderer = remember(vStyling, inIsDark) {
+		val vAlertStyling = buildAlertStyling(inIsDark, vBaseStyle.color)
 		val vRendererExtensions =
 			listOf(
 				GitHubTableRendererExtension(
 					if (inIsDark) GfmTableStyling.tableStylingDark() else GfmTableStyling.tableStylingLight(),
 					vStyling,
 				),
-				GitHubAlertRendererExtension(
-					if (inIsDark) AlertStyling.alertStylingDark() else AlertStyling.alertStylingLight(),
-					vStyling,
-				),
+				GitHubAlertRendererExtension(vAlertStyling, vStyling),
 				GitHubStrikethroughRendererExtension,
 			)
 		if (inIsDark) {
@@ -93,7 +90,7 @@ fun MarkdownPreview(
 		value = withContext(Dispatchers.Default) { vProcessor.processMarkdownDocument(inText) }
 	}
 
-	// Code-block syntax highlighter for the active theme.
+	// Per-theme code-block syntax highlighter.
 	val vHighlighter = remember(inIsDark) { JewelHighlightsCodeHighlighter(inIsDark) }
 
 	// Install styling/renderer/processor/highlighter into composition locals, then render lazily.
