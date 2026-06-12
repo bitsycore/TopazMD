@@ -112,9 +112,20 @@ src/main/kotlin/com/bitsycore/jewelmarkdown/
   `JewelTheme.globalColors.panelBackground` so toolbar/preview/status bar/gaps are themed
   (the editor keeps its own editor-field background). Recompiled and relaunched OK.
 
+- **2026-06-13** — Added **syntax highlighting** (both editor and preview):
+  - *Editor (Markdown source):* the new `TextFieldState` API has no per-token styling hook,
+    so the editor was switched to the value-based `TextArea` (`TextFieldValue`) which accepts
+    a `VisualTransformation`. `MarkdownSyntaxTransformation` regex-colors headings, bold/italic,
+    code, links, quotes, lists, strikethrough and rules (theme-aware), with `OffsetMapping.Identity`.
+    `AppState` moved from `TextFieldState` to `TextFieldValue` accordingly.
+  - *Preview (code blocks):* implemented `JewelHighlightsCodeHighlighter` (replacing
+    `NoOpCodeHighlighter`) backed by `dev.snipme:highlights:1.0.0`. Implements both
+    `CodeHighlighter` overloads (the deprecated `MimeType?` one delegates to the
+    `language: String` one); maps the fence language → `SyntaxLanguage`, highlights off-thread.
+  - Compiles warning-clean; runs on JBR.
+
 ## Status: DONE
 
 The app builds and runs. Launch with `gradlew run` (uses JBR automatically).
 Possible future enhancements: a draggable splitter, find/replace, recent-files,
-syntax highlighting in code blocks (swap `NoOpCodeHighlighter` for a real highlighter),
 and packaging via `gradlew packageDistributionForCurrentOS`.

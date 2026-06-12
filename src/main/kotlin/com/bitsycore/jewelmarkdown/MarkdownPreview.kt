@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.jewel.foundation.code.highlighting.NoOpCodeHighlighter
 import org.jetbrains.jewel.intui.markdown.standalone.ProvideMarkdownStyling
 import org.jetbrains.jewel.markdown.LazyMarkdown
 import org.jetbrains.jewel.markdown.MarkdownBlock
@@ -43,7 +42,12 @@ import org.jetbrains.jewel.intui.markdown.standalone.styling.light as markdownSt
 // Jewel's renderer, wired for GitHub-flavored Markdown (tables, alerts,
 // strikethrough, autolinks). Styling follows the current dark/light theme.
 @Composable
-fun MarkdownPreview(inText: String, inIsDark: Boolean, inModifier: Modifier = Modifier) {
+fun MarkdownPreview(
+	inText: String,
+	inIsDark: Boolean,
+	inModifier: Modifier = Modifier,
+	inOnUrlClick: (String) -> Unit = { openUrl(it) },
+) {
 	// Base Markdown styling for the active theme.
 	val vStyling = remember(inIsDark) {
 		if (inIsDark) MarkdownStyling.markdownStylingDark() else MarkdownStyling.markdownStylingLight()
@@ -89,8 +93,11 @@ fun MarkdownPreview(inText: String, inIsDark: Boolean, inModifier: Modifier = Mo
 		value = withContext(Dispatchers.Default) { vProcessor.processMarkdownDocument(inText) }
 	}
 
-	// Install styling/renderer/processor into composition locals, then render lazily.
-	ProvideMarkdownStyling(vStyling, vRenderer, NoOpCodeHighlighter, markdownProcessor = vProcessor) {
+	// Code-block syntax highlighter for the active theme.
+	val vHighlighter = remember(inIsDark) { JewelHighlightsCodeHighlighter(inIsDark) }
+
+	// Install styling/renderer/processor/highlighter into composition locals, then render lazily.
+	ProvideMarkdownStyling(vStyling, vRenderer, vHighlighter, markdownProcessor = vProcessor) {
 		val vListState = rememberLazyListState()
 		VerticallyScrollableContainer(vListState as ScrollableState, modifier = inModifier) {
 			LazyMarkdown(
@@ -99,7 +106,7 @@ fun MarkdownPreview(inText: String, inIsDark: Boolean, inModifier: Modifier = Mo
 				contentPadding = PaddingValues(16.dp),
 				state = vListState,
 				selectable = true,
-				onUrlClick = { vUrl -> openUrl(vUrl) },
+				onUrlClick = inOnUrlClick,
 			)
 		}
 	}

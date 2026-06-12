@@ -43,6 +43,9 @@ dependencies {
 	implementation("org.jetbrains.jewel:jewel-markdown-extensions-gfm-alerts:$kJewelVersion")
 	implementation("org.jetbrains.jewel:jewel-markdown-extensions-gfm-strikethrough:$kJewelVersion")
 	implementation("org.jetbrains.jewel:jewel-markdown-extensions-autolink:$kJewelVersion")
+
+	// Syntax-highlighting engine used to color fenced code blocks in the preview.
+	implementation("dev.snipme:highlights:1.0.0")
 }
 
 // Pin the toolchain to the JetBrains Runtime so Kotlin compilation and the Compose
