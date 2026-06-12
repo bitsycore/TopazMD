@@ -7,6 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,12 +101,14 @@ fun AppBody(inState: AppState) {
 // right. Replaces the old button toolbar to save space and provide standard menus.
 @Composable
 private fun MenuBar(inState: AppState) {
+	// Which top-level menu is open (by label), shared so hovering switches between them.
+	var vOpenMenu by remember { mutableStateOf<String?>(null) }
 	Row(
 		modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
 		horizontalArrangement = Arrangement.spacedBy(2.dp),
 		verticalAlignment = Alignment.CenterVertically,
 	) {
-		MenuButton("File") { vClose ->
+		MenuButton("File", vOpenMenu, { vOpenMenu = it }) { vClose ->
 			menuItem("New") { vClose(); inState.newDocument() }
 			menuItem("Open File…") { vClose(); onOpen(inState) }
 			menuItem("Open Folder…") { vClose(); chooseFolder()?.let { inState.projectRoot = it; inState.showProjectPanel = true } }
@@ -112,7 +118,7 @@ private fun MenuBar(inState: AppState) {
 			separator()
 			menuItem("Close Tab") { vClose(); inState.closeDocument(inState.activeIndex) }
 		}
-		MenuButton("Edit") { vClose ->
+		MenuButton("Edit", vOpenMenu, { vOpenMenu = it }) { vClose ->
 			menuItem("Bold") { vClose(); editWrap(inState, "**", "**", "bold") }
 			menuItem("Italic") { vClose(); editWrap(inState, "_", "_", "italic") }
 			menuItem("Strikethrough") { vClose(); editWrap(inState, "~~", "~~", "strikethrough") }
@@ -124,7 +130,7 @@ private fun MenuBar(inState: AppState) {
 			menuItem("Quote") { vClose(); editPrefix(inState, "> ") }
 			menuItem("Link") { vClose(); editWrap(inState, "[", "](https://)", "text") }
 		}
-		MenuButton("View") { vClose ->
+		MenuButton("View", vOpenMenu, { vOpenMenu = it }) { vClose ->
 			menuItem("Editor", inState.viewMode == ViewMode.Editor) { vClose(); inState.viewMode = ViewMode.Editor }
 			menuItem("Split", inState.viewMode == ViewMode.Split) { vClose(); inState.viewMode = ViewMode.Split }
 			menuItem("Preview", inState.viewMode == ViewMode.Preview) { vClose(); inState.viewMode = ViewMode.Preview }
@@ -139,25 +145,53 @@ private fun MenuBar(inState: AppState) {
 	}
 }
 
-// A flat top-level menu button that opens a popup menu on click. The popup is icon-free,
-// avoiding the IntelliJ SVG icons that are not bundled in the standalone distribution.
+// A flat top-level menu button that opens a popup menu. The popup is icon-free, avoiding the
+// IntelliJ SVG icons not bundled in the standalone distribution. Open state is shared across
+// the menu bar so that, while one menu is open, hovering another switches to it; buttons also
+// show a hover/open highlight overlay.
 @Composable
-private fun MenuButton(inLabel: String, inContent: MenuScope.(close: () -> Unit) -> Unit) {
-	var vOpen by remember { mutableStateOf(false) }
+private fun MenuButton(
+	inLabel: String,
+	inOpenMenu: String?,
+	inSetOpenMenu: (String?) -> Unit,
+	inContent: MenuScope.(close: () -> Unit) -> Unit,
+) {
+	val vIsOpen = inOpenMenu == inLabel
+	val vInteraction = remember { MutableInteractionSource() }
+	val vHovered by vInteraction.collectIsHoveredAsState()
+
+	// While any menu is open, moving the mouse over a different menu opens that one.
+	LaunchedEffect(vHovered, inOpenMenu) {
+		if (vHovered && inOpenMenu != null && inOpenMenu != inLabel) inSetOpenMenu(inLabel)
+	}
+
+	val vHighlight =
+		when {
+			vIsOpen -> JewelTheme.globalColors.text.info.copy(alpha = 0.18f)
+			vHovered -> JewelTheme.globalColors.text.info.copy(alpha = 0.10f)
+			else -> Color.Transparent
+		}
 	Box {
 		Box(
 			modifier =
 				Modifier
 					.clip(RoundedCornerShape(6.dp))
-					.background(if (vOpen) JewelTheme.globalColors.text.info.copy(alpha = 0.15f) else Color.Transparent)
-					.clickable { vOpen = true }
+					.background(vHighlight)
+					.hoverable(vInteraction)
+					.clickable { inSetOpenMenu(if (vIsOpen) null else inLabel) }
 					.padding(horizontal = 10.dp, vertical = 5.dp),
 		) {
 			Text(inLabel, fontSize = 13.sp)
 		}
-		if (vOpen) {
-			PopupMenu(onDismissRequest = { vOpen = false; true }, horizontalAlignment = Alignment.Start) {
-				inContent { vOpen = false }
+		if (vIsOpen) {
+			PopupMenu(
+				onDismissRequest = {
+					if (inOpenMenu == inLabel) inSetOpenMenu(null)
+					true
+				},
+				horizontalAlignment = Alignment.Start,
+			) {
+				inContent { inSetOpenMenu(null) }
 			}
 		}
 	}
