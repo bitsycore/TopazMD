@@ -54,14 +54,22 @@ fun AppBody(inState: AppState) {
 			.fillMaxSize()
 			.background(vSettings.gradient.brush(JewelTheme.isDark))
 	) {
-		Column(Modifier.fillMaxSize()) {
-			Toolbar(inState)
-			Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
-			TabStrip(inState)
-			EditorAndPreview(inState, Modifier.weight(1f).fillMaxWidth())
-			if (vSettings.showStatusBar) {
+		Row(Modifier.fillMaxSize()) {
+			ActivityBar(inState)
+			Divider(Orientation.Vertical, Modifier.fillMaxHeight(), color = vBorder)
+			if (inState.showProjectPanel) {
+				ProjectPanel(inState, Modifier.width(250.dp).fillMaxHeight())
+				Divider(Orientation.Vertical, Modifier.fillMaxHeight(), color = vBorder)
+			}
+			Column(Modifier.weight(1f).fillMaxHeight()) {
+				Toolbar(inState)
 				Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
-				StatusBar(inState)
+				TabStrip(inState)
+				EditorAndPreview(inState, Modifier.weight(1f).fillMaxWidth())
+				if (vSettings.showStatusBar) {
+					Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
+					StatusBar(inState)
+				}
 			}
 		}
 		if (inState.showSettings) {
@@ -80,6 +88,7 @@ private fun Toolbar(inState: AppState) {
 	) {
 		OutlinedButton(onClick = { inState.newDocument() }) { Text("New") }
 		OutlinedButton(onClick = { onOpen(inState) }) { Text("Open") }
+		OutlinedButton(onClick = { chooseFolder()?.let { inState.projectRoot = it; inState.showProjectPanel = true } }) { Text("Open Folder") }
 		OutlinedButton(onClick = { onSave(inState) }) { Text("Save") }
 		OutlinedButton(onClick = { onSaveAs(inState) }) { Text("Save As") }
 		Spacer(Modifier.weight(1f))
