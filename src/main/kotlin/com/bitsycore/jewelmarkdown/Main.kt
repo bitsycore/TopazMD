@@ -46,7 +46,10 @@ fun main() = application {
 
 	IntUiTheme(vThemeDefinition, vStyling, false) {
 		DecoratedWindow(
-			onCloseRequest = { exitApplication() },
+			onCloseRequest = {
+				Persistence.save(vState)
+				exitApplication()
+			},
 			state = vWindowState,
 			title = vState.windowTitle(),
 			// Track Ctrl (for Ctrl+Click links), record a shortcut being rebound, or dispatch a

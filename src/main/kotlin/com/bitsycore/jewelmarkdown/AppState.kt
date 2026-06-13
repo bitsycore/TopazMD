@@ -134,9 +134,13 @@ class AppState(inIsDark: Boolean) {
 	}
 }
 
-// Creates and remembers the app state seeded with one sample document, dark theme on.
+// Creates and remembers the app state seeded with one sample document, then applies any
+// saved preferences (theme, UI settings, keymap).
 @Composable
 fun rememberAppState(): AppState =
 	remember {
-		AppState(inIsDark = true).apply { documents.add(Document(kSampleMarkdown, null)) }
+		AppState(inIsDark = true).apply {
+			documents.add(Document(kSampleMarkdown, null))
+			Persistence.load(this)
+		}
 	}

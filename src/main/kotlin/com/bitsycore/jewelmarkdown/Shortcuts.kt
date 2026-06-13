@@ -77,6 +77,20 @@ fun isModifierKey(inKey: Key): Boolean =
 fun shortcutFromEvent(inEvent: KeyEvent): Shortcut =
 	Shortcut(inEvent.key, ctrl = inEvent.isCtrlPressed, shift = inEvent.isShiftPressed, alt = inEvent.isAltPressed)
 
+// Encodes a shortcut to a string for persistence ("ctrl,shift,alt,keyCode").
+fun Shortcut.encode(): String = "$ctrl,$shift,$alt,${key.keyCode}"
+
+// Decodes a shortcut from its persisted string, or null if malformed.
+fun decodeShortcut(inText: String): Shortcut? {
+	val vParts = inText.split(",")
+	if (vParts.size != 4) return null
+	val vCtrl = vParts[0].toBooleanStrictOrNull() ?: return null
+	val vShift = vParts[1].toBooleanStrictOrNull() ?: return null
+	val vAlt = vParts[2].toBooleanStrictOrNull() ?: return null
+	val vCode = vParts[3].toLongOrNull() ?: return null
+	return Shortcut(Key(vCode), ctrl = vCtrl, shift = vShift, alt = vAlt)
+}
+
 // The default Visual-Studio-style keymap.
 fun defaultKeymap(): SnapshotStateMap<ShortcutAction, Shortcut> {
 	val vMap = mutableStateMapOf<ShortcutAction, Shortcut>()
