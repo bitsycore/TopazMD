@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -46,10 +49,28 @@ fun main() = application {
 			onCloseRequest = { exitApplication() },
 			state = vWindowState,
 			title = vState.windowTitle(),
-			// Track Ctrl so the preview can open links only on Ctrl+Click (never consumes the event).
+			// Track Ctrl (for Ctrl+Click links), record a shortcut being rebound, or dispatch a
+			// bound shortcut action. Returns true only when a key event is consumed.
 			onPreviewKeyEvent = { vEvent ->
 				if (vEvent.isCtrlPressed != vState.isCtrlDown) vState.isCtrlDown = vEvent.isCtrlPressed
-				false
+				val vRecording = vState.recordingAction
+				when {
+					vRecording != null && vEvent.type == KeyEventType.KeyDown && !isModifierKey(vEvent.key) -> {
+						vState.keymap[vRecording] = shortcutFromEvent(vEvent)
+						vState.recordingAction = null
+						true
+					}
+					vEvent.type == KeyEventType.KeyDown -> {
+						val vAction = vState.keymap.entries.firstOrNull { it.value.matches(vEvent) }?.key
+						if (vAction != null) {
+							runShortcutAction(vState, vAction)
+							true
+						} else {
+							false
+						}
+					}
+					else -> false
+				}
 			},
 		) {
 			AppTitleBar(vState)

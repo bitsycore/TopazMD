@@ -57,6 +57,10 @@ class AppState(inIsDark: Boolean) {
 	val settings = Settings()
 	var showSettings by mutableStateOf(false)
 
+	// Keyboard shortcuts (action -> key combo) and the action currently being rebound.
+	val keymap = defaultKeymap()
+	var recordingAction by mutableStateOf<ShortcutAction?>(null)
+
 	// Project (folder) panel.
 	var projectRoot by mutableStateOf<File?>(null)
 	var showProjectPanel by mutableStateOf(false)
@@ -111,6 +115,12 @@ class AppState(inIsDark: Boolean) {
 		val vActive = active
 		documents.add(inTo, documents.removeAt(inFrom))
 		activeIndex = documents.indexOf(vActive).coerceAtLeast(0)
+	}
+
+	// Restores the keyboard shortcuts to the default Visual-Studio-style layout.
+	fun resetKeymap() {
+		keymap.clear()
+		keymap.putAll(defaultKeymap())
 	}
 
 	// Window/title-bar caption for the active document; a dot marks unsaved changes.

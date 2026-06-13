@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -399,7 +401,7 @@ private fun EditorTextArea(inState: AppState, inModifier: Modifier) {
 	val vDoc = inState.active
 	val vEditorStyle =
 		JewelTheme.defaultTextStyle.copy(
-			fontFamily = FontFamily.Monospace,
+			fontFamily = inState.settings.editorFont.family,
 			fontSize = inState.settings.editorFontSizeSp.sp,
 		)
 	val vTransformation = remember(inState.isDark) { MarkdownSyntaxTransformation(inState.isDark) }
@@ -482,13 +484,14 @@ private fun StatusBar(inState: AppState) {
 // MARK: Settings overlay
 // ==================
 
-// Modal settings overlay: a dimmed scrim (click to dismiss) with a centered card of controls
-// that edit the live Settings model.
+// Modal settings dialog with a category sidebar (IntelliJ-style). The scrim dismisses on an
+// outside click; the sidebar switches the right-hand content.
 @Composable
 private fun SettingsOverlay(inState: AppState) {
 	val vSettings = inState.settings
 	val vBorder = JewelTheme.globalColors.borders.normal
-	val vMuted = JewelTheme.globalColors.text.info
+	var vCategory by remember { mutableStateOf("Appearance") }
+	val vCategories = listOf("Appearance", "Editor", "Shortcuts", "About")
 	Box(
 		modifier =
 			Modifier
@@ -500,48 +503,134 @@ private fun SettingsOverlay(inState: AppState) {
 		Column(
 			modifier =
 				Modifier
-					.width(440.dp)
+					.width(640.dp)
+					.height(480.dp)
 					.clip(RoundedCornerShape(12.dp))
 					.background(JewelTheme.globalColors.panelBackground)
 					.border(1.dp, vBorder, RoundedCornerShape(12.dp))
-					.pointerInput(Unit) { detectTapGestures { } }
-					.padding(20.dp),
-			verticalArrangement = Arrangement.spacedBy(12.dp),
+					.pointerInput(Unit) { detectTapGestures { } },
 		) {
-			Text("Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-
-			GroupHeader("Appearance")
-			Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-				Text("Theme", modifier = Modifier.width(120.dp))
-				Chip("Dark", inState.isDark) { inState.isDark = true }
-				Chip("Light", !inState.isDark) { inState.isDark = false }
-			}
-			Text("Background gradient", color = vMuted, fontSize = 12.sp)
-			Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-				for (vPreset in GradientPreset.entries) {
-					Chip(vPreset.displayName, vSettings.gradient == vPreset) { vSettings.gradient = vPreset }
+			Text("Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(16.dp))
+			Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
+			Row(Modifier.weight(1f).fillMaxWidth()) {
+				Column(
+					Modifier.width(150.dp).fillMaxHeight().padding(8.dp),
+					verticalArrangement = Arrangement.spacedBy(2.dp),
+				) {
+					for (vCat in vCategories) {
+						CategoryItem(vCat, vCat == vCategory) { vCategory = vCat }
+					}
+				}
+				Divider(Orientation.Vertical, Modifier.fillMaxHeight(), color = vBorder)
+				Column(
+					Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(16.dp),
+					verticalArrangement = Arrangement.spacedBy(12.dp),
+				) {
+					when (vCategory) {
+						"Appearance" -> AppearanceSettings(inState)
+						"Editor" -> EditorSettings(inState)
+						"Shortcuts" -> ShortcutSettings(inState)
+						else -> AboutSettings()
+					}
 				}
 			}
-
-			GroupHeader("Layout")
-			SliderRow("Panel corners", vSettings.paneCornerDp, 0f..20f) { vSettings.paneCornerDp = it }
-			SliderRow("Panel spacing", vSettings.contentGapDp, 0f..28f) { vSettings.contentGapDp = it }
-
-			GroupHeader("Editor")
-			SliderRow("Font size", vSettings.editorFontSizeSp, 10f..24f) { vSettings.editorFontSizeSp = it }
-
-			GroupHeader("View")
-			Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-				Text("Status bar", modifier = Modifier.width(120.dp))
-				Chip("On", vSettings.showStatusBar) { vSettings.showStatusBar = true }
-				Chip("Off", !vSettings.showStatusBar) { vSettings.showStatusBar = false }
-			}
-
-			Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+			Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
+			Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+				Chip("Reset to defaults", false) {
+					vSettings.reset()
+					inState.resetKeymap()
+				}
+				Spacer(Modifier.weight(1f))
 				DefaultButton(onClick = { inState.showSettings = false }) { Text("Done") }
 			}
 		}
 	}
+}
+
+// A settings sidebar category entry.
+@Composable
+private fun CategoryItem(inLabel: String, inSelected: Boolean, inOnClick: () -> Unit) {
+	Box(
+		modifier =
+			Modifier
+				.fillMaxWidth()
+				.clip(RoundedCornerShape(6.dp))
+				.background(if (inSelected) JewelTheme.globalColors.text.info.copy(alpha = 0.15f) else Color.Transparent)
+				.clickable(onClick = inOnClick)
+				.padding(horizontal = 10.dp, vertical = 6.dp),
+	) {
+		Text(inLabel, color = if (inSelected) JewelTheme.globalColors.text.normal else JewelTheme.globalColors.text.info)
+	}
+}
+
+// Appearance category: theme, background gradient and layout.
+@Composable
+private fun AppearanceSettings(inState: AppState) {
+	val vSettings = inState.settings
+	GroupHeader("Theme")
+	Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+		Chip("Dark", inState.isDark) { inState.isDark = true }
+		Chip("Light", !inState.isDark) { inState.isDark = false }
+	}
+	GroupHeader("Background gradient")
+	Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+		for (vPreset in GradientPreset.entries) {
+			Chip(vPreset.displayName, vSettings.gradient == vPreset) { vSettings.gradient = vPreset }
+		}
+	}
+	GroupHeader("Layout")
+	SliderRow("Panel corners", vSettings.paneCornerDp, 0f..20f) { vSettings.paneCornerDp = it }
+	SliderRow("Panel spacing", vSettings.contentGapDp, 0f..28f) { vSettings.contentGapDp = it }
+}
+
+// Editor category: font family/size and status bar.
+@Composable
+private fun EditorSettings(inState: AppState) {
+	val vSettings = inState.settings
+	GroupHeader("Font")
+	Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+		for (vFont in EditorFont.entries) {
+			Chip(vFont.displayName, vSettings.editorFont == vFont) { vSettings.editorFont = vFont }
+		}
+	}
+	SliderRow("Font size", vSettings.editorFontSizeSp, 10f..24f) { vSettings.editorFontSizeSp = it }
+	GroupHeader("View")
+	Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+		Text("Status bar", modifier = Modifier.width(120.dp))
+		Chip("On", vSettings.showStatusBar) { vSettings.showStatusBar = true }
+		Chip("Off", !vSettings.showStatusBar) { vSettings.showStatusBar = false }
+	}
+}
+
+// Shortcuts category: each action with its current binding; click to rebind.
+@Composable
+private fun ShortcutSettings(inState: AppState) {
+	Text(
+		"Click a shortcut, then press the new key combination.",
+		color = JewelTheme.globalColors.text.info,
+		fontSize = 12.sp,
+	)
+	for (vAction in ShortcutAction.entries) {
+		val vRecording = inState.recordingAction == vAction
+		val vLabel = if (vRecording) "Press keys…" else (inState.keymap[vAction]?.label() ?: "Unbound")
+		Row(
+			modifier = Modifier.fillMaxWidth(),
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.spacedBy(8.dp),
+		) {
+			Text(vAction.displayName, modifier = Modifier.weight(1f))
+			Chip(vLabel, vRecording) { inState.recordingAction = if (vRecording) null else vAction }
+		}
+	}
+}
+
+// About category: brief app info.
+@Composable
+private fun AboutSettings() {
+	val vMuted = JewelTheme.globalColors.text.info
+	Text("Jewel Markdown", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+	Text("A Compose for Desktop Markdown editor built with JetBrains Jewel.", color = vMuted, fontSize = 13.sp)
+	Text("Kotlin 2.2 · Compose 1.10 · Jewel 0.34 · JetBrains Runtime 21", color = vMuted, fontSize = 12.sp)
 }
 
 // A compact selectable chip used for theme/preset choices.
@@ -618,4 +707,28 @@ private fun onSaveAs(inState: AppState) {
 	val vDoc = inState.active
 	val vFile = chooseSaveFile(vDoc.file?.name ?: "untitled.md") ?: return
 	runCatching { vFile.writeText(vDoc.text) }.onSuccess { vDoc.markSaved(vFile) }
+}
+
+// Executes a bound keyboard-shortcut action against the current state.
+internal fun runShortcutAction(inState: AppState, inAction: ShortcutAction) {
+	when (inAction) {
+		ShortcutAction.NewFile -> inState.newDocument()
+		ShortcutAction.OpenFile -> onOpen(inState)
+		ShortcutAction.OpenFolder -> chooseFolder()?.let { inState.projectRoot = it; inState.showProjectPanel = true }
+		ShortcutAction.Save -> onSave(inState)
+		ShortcutAction.SaveAs -> onSaveAs(inState)
+		ShortcutAction.CloseTab -> inState.closeDocument(inState.activeIndex)
+		ShortcutAction.Bold -> editWrap(inState, "**", "**", "bold")
+		ShortcutAction.Italic -> editWrap(inState, "_", "_", "italic")
+		ShortcutAction.InlineCode -> editWrap(inState, "`", "`", "code")
+		ShortcutAction.Heading -> editPrefix(inState, "# ")
+		ShortcutAction.Quote -> editPrefix(inState, "> ")
+		ShortcutAction.BulletList -> editPrefix(inState, "- ")
+		ShortcutAction.Link -> editWrap(inState, "[", "](https://)", "text")
+		ShortcutAction.ToggleProjectPanel -> inState.showProjectPanel = !inState.showProjectPanel
+		ShortcutAction.ViewEditor -> inState.viewMode = ViewMode.Editor
+		ShortcutAction.ViewSplit -> inState.viewMode = ViewMode.Split
+		ShortcutAction.ViewPreview -> inState.viewMode = ViewMode.Preview
+		ShortcutAction.OpenSettings -> inState.showSettings = true
+	}
 }

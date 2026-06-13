@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 
 // A named background-gradient preset. Each supplies the ambient gradient stops and a matching
 // title-bar accent for both the dark and light themes.
@@ -63,6 +64,13 @@ enum class GradientPreset(
 	fun titleAccent(inIsDark: Boolean): Color = if (inIsDark) darkAccent else lightAccent
 }
 
+// Editor font family choices.
+enum class EditorFont(val displayName: String, val family: FontFamily) {
+	Monospace("Monospace", FontFamily.Monospace),
+	SansSerif("Sans-serif", FontFamily.SansSerif),
+	Serif("Serif", FontFamily.Serif),
+}
+
 // All user-configurable UI settings. Properties are observable so edits apply live.
 @Stable
 class Settings {
@@ -75,9 +83,20 @@ class Settings {
 	// Spacing around and between the panels, in dp.
 	var contentGapDp by mutableStateOf(12f)
 
-	// Editor font size, in sp.
+	// Editor font family and size.
+	var editorFont by mutableStateOf(EditorFont.Monospace)
 	var editorFontSizeSp by mutableStateOf(13f)
 
 	// Whether the bottom status bar is shown.
 	var showStatusBar by mutableStateOf(true)
+
+	// Restores every setting to its default value.
+	fun reset() {
+		gradient = GradientPreset.Mica
+		paneCornerDp = 8f
+		contentGapDp = 12f
+		editorFont = EditorFont.Monospace
+		editorFontSizeSp = 13f
+		showStatusBar = true
+	}
 }
