@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -112,6 +113,10 @@ fun AppBody(inState: AppState) {
 				}
 			}
 		}
+		// Closes an open title-bar menu when clicking anywhere in the content area.
+		if (inState.menuOpenName != null) {
+			Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { inState.menuOpenName = null } })
+		}
 		if (inState.showSettings) {
 			SettingsOverlay(inState)
 		}
@@ -126,14 +131,14 @@ fun AppBody(inState: AppState) {
 // right. Replaces the old button toolbar to save space and provide standard menus.
 @Composable
 internal fun AppMenus(inState: AppState, inModifier: Modifier = Modifier) {
-	// Which top-level menu is open (by label), shared so hovering switches between them.
-	var vOpenMenu by remember { mutableStateOf<String?>(null) }
+	val vOpenMenu = inState.menuOpenName
+	val vSetOpenMenu: (String?) -> Unit = { inState.menuOpenName = it }
 	Row(
 		modifier = inModifier,
 		horizontalArrangement = Arrangement.spacedBy(2.dp),
 		verticalAlignment = Alignment.CenterVertically,
 	) {
-		MenuButton("File", vOpenMenu, { vOpenMenu = it }) { vClose ->
+		MenuButton("File", vOpenMenu, vSetOpenMenu) { vClose ->
 			actionItem(inState, ShortcutAction.NewFile, vClose)
 			actionItem(inState, ShortcutAction.OpenFile, vClose)
 			actionItem(inState, ShortcutAction.OpenFolder, vClose)
@@ -143,7 +148,7 @@ internal fun AppMenus(inState: AppState, inModifier: Modifier = Modifier) {
 			separator()
 			actionItem(inState, ShortcutAction.CloseTab, vClose)
 		}
-		MenuButton("Edit", vOpenMenu, { vOpenMenu = it }) { vClose ->
+		MenuButton("Edit", vOpenMenu, vSetOpenMenu) { vClose ->
 			actionItem(inState, ShortcutAction.Bold, vClose)
 			actionItem(inState, ShortcutAction.Italic, vClose)
 			menuItem("Strikethrough") { vClose(); editWrap(inState, "~~", "~~", "strikethrough") }
@@ -155,7 +160,7 @@ internal fun AppMenus(inState: AppState, inModifier: Modifier = Modifier) {
 			actionItem(inState, ShortcutAction.Quote, vClose)
 			actionItem(inState, ShortcutAction.Link, vClose)
 		}
-		MenuButton("View", vOpenMenu, { vOpenMenu = it }) { vClose ->
+		MenuButton("View", vOpenMenu, vSetOpenMenu) { vClose ->
 			actionItem(inState, ShortcutAction.ViewEditor, vClose, inState.viewMode == ViewMode.Editor)
 			actionItem(inState, ShortcutAction.ViewSplit, vClose, inState.viewMode == ViewMode.Split)
 			actionItem(inState, ShortcutAction.ViewPreview, vClose, inState.viewMode == ViewMode.Preview)
@@ -213,6 +218,9 @@ private fun MenuButton(
 					true
 				},
 				horizontalAlignment = Alignment.Start,
+				// Non-focusable so the menu bar keeps receiving hover events (enabling
+				// hover-to-switch); a dismiss layer in AppBody closes it on an outside click.
+				popupProperties = PopupProperties(focusable = false),
 			) {
 				inContent { inSetOpenMenu(null) }
 			}
@@ -250,23 +258,47 @@ internal fun ViewModeIcons(inState: AppState) {
 	}
 }
 
-// A highlight-on-select icon button for one view mode.
+// A highlight-on-select/hover icon button for one view mode.
 @Composable
 private fun ViewModeIconButton(inMode: ViewMode, inState: AppState) {
-	val vSelected = inState.viewMode == inMode
-	val vTint = if (vSelected) JewelTheme.globalColors.text.normal else JewelTheme.globalColors.text.info
-	Tooltip(tooltip = { Text(inMode.name) }) {
+	IconButtonBox(inState.viewMode == inMode, inMode.name, { inState.viewMode = inMode }) { vTint ->
+		ViewModeGlyph(inMode, vTint, Modifier.size(16.dp))
+	}
+}
+
+// A 28dp icon button with select + hover highlight and a tooltip.
+@Composable
+private fun IconButtonBox(inSelected: Boolean, inTooltip: String, inOnClick: () -> Unit, inIcon: @Composable (Color) -> Unit) {
+	val vInteraction = remember { MutableInteractionSource() }
+	val vHovered by vInteraction.collectIsHoveredAsState()
+	val vTint = if (inSelected) JewelTheme.globalColors.text.normal else JewelTheme.globalColors.text.info
+	val vBg =
+		when {
+			inSelected -> JewelTheme.globalColors.text.info.copy(alpha = 0.18f)
+			vHovered -> JewelTheme.globalColors.text.info.copy(alpha = 0.10f)
+			else -> Color.Transparent
+		}
+	Tooltip(tooltip = { Text(inTooltip) }) {
 		Box(
 			modifier =
 				Modifier
 					.size(28.dp)
 					.clip(RoundedCornerShape(6.dp))
-					.background(if (vSelected) JewelTheme.globalColors.text.info.copy(alpha = 0.15f) else Color.Transparent)
-					.clickable { inState.viewMode = inMode },
+					.background(vBg)
+					.hoverable(vInteraction)
+					.clickable(onClick = inOnClick),
 			contentAlignment = Alignment.Center,
 		) {
-			ViewModeGlyph(inMode, vTint, Modifier.size(16.dp))
+			inIcon(vTint)
 		}
+	}
+}
+
+// Title-bar settings icon button (a sliders glyph).
+@Composable
+internal fun SettingsIconButton(inState: AppState) {
+	IconButtonBox(inState.showSettings, "Settings", { inState.showSettings = true }) { vTint ->
+		SettingsGlyph(vTint, Modifier.size(16.dp))
 	}
 }
 
@@ -290,6 +322,23 @@ private fun ViewModeGlyph(inMode: ViewMode, inTint: Color, inModifier: Modifier)
 	}
 }
 
+// Draws a "sliders" settings glyph: three lines, each with a knob.
+@Composable
+private fun SettingsGlyph(inTint: Color, inModifier: Modifier) {
+	Canvas(inModifier) {
+		val vW = size.width
+		val vH = size.height
+		val vStroke = size.minDimension * 0.09f
+		val vR = size.minDimension * 0.11f
+		for (vI in 0..2) {
+			val vY = vH * (0.25f + vI * 0.25f)
+			drawLine(inTint, Offset(vW * 0.12f, vY), Offset(vW * 0.88f, vY), strokeWidth = vStroke)
+			val vCx = vW * (if (vI % 2 == 0) 0.68f else 0.34f)
+			drawCircle(inTint, radius = vR, center = Offset(vCx, vY))
+		}
+	}
+}
+
 // ==================
 // MARK: Tabs
 // ==================
@@ -298,9 +347,9 @@ private fun ViewModeGlyph(inMode: ViewMode, inTint: Color, inModifier: Modifier)
 @Composable
 private fun TabStrip(inState: AppState) {
 	Row(
-		modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
-		horizontalArrangement = Arrangement.spacedBy(4.dp),
-		verticalAlignment = Alignment.CenterVertically,
+		modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, top = 6.dp),
+		horizontalArrangement = Arrangement.spacedBy(3.dp),
+		verticalAlignment = Alignment.Bottom,
 	) {
 		inState.documents.forEachIndexed { vIndex, vDoc ->
 			TabItem(
@@ -341,10 +390,16 @@ private fun TabItem(
 			modifier =
 				Modifier
 					.clip(vShape)
-					.background(if (inActive) JewelTheme.globalColors.panelBackground else Color.Transparent)
+					.background(
+						if (inActive) {
+							JewelTheme.globalColors.panelBackground
+						} else {
+							JewelTheme.globalColors.panelBackground.copy(alpha = 0.4f)
+						}
+					)
 					.drawBehind {
 						if (inActive) {
-							val vY = size.height - 1.dp.toPx()
+							val vY = 1.dp.toPx()
 							drawLine(vAccent, Offset(0f, vY), Offset(size.width, vY), strokeWidth = 2.dp.toPx())
 						}
 					}
@@ -371,7 +426,7 @@ private fun TabItem(
 							},
 						)
 					}
-					.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+					.padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(6.dp),
 		) {
@@ -402,11 +457,11 @@ private fun EditorAndPreview(inState: AppState, inModifier: Modifier) {
 
 	@Composable
 	fun EditorCard(inPaneModifier: Modifier) =
-		Pane("Editor", inPaneModifier, vCorner) { EditorPane(inState, Modifier.fillMaxSize()) }
+		Pane(inPaneModifier, vCorner) { EditorPane(inState, Modifier.fillMaxSize()) }
 
 	@Composable
 	fun PreviewCard(inPaneModifier: Modifier) =
-		Pane("Preview", inPaneModifier, vCorner) {
+		Pane(inPaneModifier, vCorner) {
 			MarkdownPreview(
 				inText = inState.active.text,
 				inIsDark = inState.isDark,
@@ -417,11 +472,11 @@ private fun EditorAndPreview(inState: AppState, inModifier: Modifier) {
 		}
 
 	when (inState.viewMode) {
-		ViewMode.Editor -> Row(inModifier.padding(vGap)) { EditorCard(Modifier.weight(1f).fillMaxHeight()) }
-		ViewMode.Preview -> Row(inModifier.padding(vGap)) { PreviewCard(Modifier.weight(1f).fillMaxHeight()) }
+		ViewMode.Editor -> Row(inModifier.padding(start = vGap, end = vGap, bottom = vGap)) { EditorCard(Modifier.weight(1f).fillMaxHeight()) }
+		ViewMode.Preview -> Row(inModifier.padding(start = vGap, end = vGap, bottom = vGap)) { PreviewCard(Modifier.weight(1f).fillMaxHeight()) }
 		ViewMode.Split -> {
 			var vWidth by remember { mutableStateOf(1f) }
-			Row(modifier = inModifier.padding(vGap).onSizeChanged { vWidth = it.width.toFloat().coerceAtLeast(1f) }) {
+			Row(modifier = inModifier.padding(start = vGap, end = vGap, bottom = vGap).onSizeChanged { vWidth = it.width.toFloat().coerceAtLeast(1f) }) {
 				EditorCard(Modifier.weight(inState.splitRatio).fillMaxHeight())
 				SplitHandle(vGap) { vDelta -> inState.splitRatio = (inState.splitRatio + vDelta / vWidth).coerceIn(0.15f, 0.85f) }
 				PreviewCard(Modifier.weight(1f - inState.splitRatio).fillMaxHeight())
@@ -445,39 +500,19 @@ private fun SplitHandle(inWidth: Dp, inOnDrag: (Float) -> Unit) {
 	}
 }
 
-// A bordered, rounded panel with a small header label — the IntelliJ tool-window look.
+// A bordered, rounded, shadowed panel (the IntelliJ tool-window card look).
 @Composable
-private fun Pane(inTitle: String, inModifier: Modifier, inCornerDp: Dp, inContent: @Composable BoxScope.() -> Unit) {
-	val vBorder = JewelTheme.globalColors.borders.normal
+private fun Pane(inModifier: Modifier, inCornerDp: Dp, inContent: @Composable BoxScope.() -> Unit) {
 	val vShape = RoundedCornerShape(inCornerDp)
-	Column(
-		inModifier
-			.shadow(2.dp, vShape)
-			.clip(vShape)
-			.background(JewelTheme.globalColors.panelBackground)
-			.border(1.dp, vBorder, vShape)
-	) {
-		PaneHeader(inTitle)
-		Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
-		Box(Modifier.weight(1f).fillMaxWidth(), content = inContent)
-	}
-}
-
-// Compact, muted header label at the top of a pane.
-@Composable
-private fun PaneHeader(inTitle: String) {
-	Row(
-		modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
-		verticalAlignment = Alignment.CenterVertically,
-	) {
-		Text(
-			inTitle.uppercase(),
-			color = JewelTheme.globalColors.text.info,
-			fontWeight = FontWeight.Medium,
-			fontSize = 11.sp,
-			letterSpacing = 0.5.sp,
-		)
-	}
+	Box(
+		modifier =
+			inModifier
+				.shadow(2.dp, vShape)
+				.clip(vShape)
+				.background(JewelTheme.globalColors.panelBackground)
+				.border(1.dp, JewelTheme.globalColors.borders.normal, vShape),
+		content = inContent,
+	)
 }
 
 // Editor pane: a Markdown formatting toolbar above the raw text area.

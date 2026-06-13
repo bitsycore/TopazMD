@@ -20,7 +20,6 @@ import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
 import org.jetbrains.jewel.ui.ComponentStyling
-import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.DecoratedWindowScope
@@ -96,17 +95,14 @@ private fun DecoratedWindowScope.AppTitleBar(inState: AppState) {
 		val vDoc = inState.active
 		Text((if (vDoc.isDirty) "● " else "") + vDoc.title)
 
-		// Right: view-mode icons, settings and theme toggle.
+		// Right: view-mode icons and a settings icon (theme is set in Settings).
 		Row(
 			modifier = Modifier.align(Alignment.End).padding(end = 8.dp),
 			horizontalArrangement = Arrangement.spacedBy(6.dp),
 			verticalAlignment = Alignment.CenterVertically,
 		) {
 			ViewModeIcons(inState)
-			OutlinedButton(onClick = { inState.showSettings = true }) { Text("Settings") }
-			OutlinedButton(onClick = { inState.isDark = !inState.isDark }) {
-				Text(if (inState.isDark) "Light" else "Dark")
-			}
+			SettingsIconButton(inState)
 		}
 	}
 }

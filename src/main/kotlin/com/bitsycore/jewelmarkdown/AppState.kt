@@ -60,6 +60,9 @@ class AppState(inIsDark: Boolean) {
 	val settings = Settings()
 	var showSettings by mutableStateOf(false)
 
+	// Which title-bar menu (File/Edit/View) is currently open, shared so hovering switches.
+	var menuOpenName by mutableStateOf<String?>(null)
+
 	// Keyboard shortcuts (action -> key combo) and the action currently being rebound.
 	val keymap = defaultKeymap()
 	var recordingAction by mutableStateOf<ShortcutAction?>(null)

@@ -3,6 +3,9 @@ package com.bitsycore.jewelmarkdown
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -68,14 +72,23 @@ private fun ActivityButton(
 	inOnClick: () -> Unit,
 	inIcon: @Composable (Color) -> Unit,
 ) {
+	val vInteraction = remember { MutableInteractionSource() }
+	val vHovered by vInteraction.collectIsHoveredAsState()
 	val vTint = if (inSelected) JewelTheme.globalColors.text.normal else JewelTheme.globalColors.text.info
+	val vBg =
+		when {
+			inSelected -> JewelTheme.globalColors.text.info.copy(alpha = 0.18f)
+			vHovered -> JewelTheme.globalColors.text.info.copy(alpha = 0.10f)
+			else -> Color.Transparent
+		}
 	Tooltip(tooltip = { Text(inTooltip) }) {
 		Box(
 			modifier =
 				Modifier
 					.size(32.dp)
 					.clip(RoundedCornerShape(8.dp))
-					.background(if (inSelected) JewelTheme.globalColors.text.info.copy(alpha = 0.15f) else Color.Transparent)
+					.background(vBg)
+					.hoverable(vInteraction)
 					.clickable(onClick = inOnClick),
 			contentAlignment = Alignment.Center,
 		) {
