@@ -43,6 +43,7 @@ import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -451,6 +452,7 @@ private fun Pane(inTitle: String, inModifier: Modifier, inCornerDp: Dp, inConten
 	val vShape = RoundedCornerShape(inCornerDp)
 	Column(
 		inModifier
+			.shadow(2.dp, vShape)
 			.clip(vShape)
 			.background(JewelTheme.globalColors.panelBackground)
 			.border(1.dp, vBorder, vShape)

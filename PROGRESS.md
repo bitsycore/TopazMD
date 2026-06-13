@@ -124,6 +124,16 @@ src/main/kotlin/com/bitsycore/jewelmarkdown/
     `language: String` one); maps the fence language → `SyntaxLanguage`, highlights off-thread.
   - Compiles warning-clean; runs on JBR.
 
+- **2026-06-13** — Major feature/UX expansion (committed incrementally): editor + preview
+  syntax highlighting; IntelliJ-style panels with a dark Mica gradient; Markdown helper
+  toolbar; multi-document **tabs** (reorder by drag, right-click close menu, file
+  drag-and-drop); **project folder panel** + activity-bar toggle; **File/Edit/View menu bar
+  in the title bar** (hover-switch, shortcut hints); **settings dialog** with categories,
+  gradient presets, font choice and reset; **Visual-Studio-style keyboard shortcuts**
+  (rebindable); draggable editor/preview splitter; preference + keymap **persistence**;
+  readability fixes for quotes/code/alerts. Standalone-icon limitation worked around by
+  using text/drawn glyphs (no IntelliJ SVG resources needed).
+
 ## Status: DONE
 
 The app builds and runs. Launch with `gradlew run` (uses JBR automatically).

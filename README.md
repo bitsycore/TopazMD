@@ -6,15 +6,26 @@ Dark theme by default.
 
 ## Features
 
-- **Decorated window** with a custom Jewel title bar (theme toggle lives there).
-- **Split view**: raw Markdown editor on the left, live rendered preview on the right.
-  Switch between **Editor / Split / Preview** from the toolbar.
-- **Live preview** rendered by Jewel's own Markdown renderer, so it matches the IntelliJ
-  theme. GitHub-flavored Markdown is enabled: **tables, alerts, ~~strikethrough~~,
-  autolinks**, plus the usual headings/lists/code/quotes/links.
-- **Dark theme by default**, with a one-click light/dark toggle.
-- **File actions**: New, Open, Save, Save As (native dialogs), with an unsaved-changes
-  indicator and a status bar (path, line/word/char counts).
+- **Decorated window** with a custom Jewel title bar that hosts the **File / Edit / View
+  menus** (hover to switch between open menus), a centered document name, the view-mode
+  icons, settings and a light/dark toggle.
+- **Multiple documents as tabs**: open many files, reorder by dragging, right-click for
+  Close / Close Others / Close All; **drag files onto the window** to open them.
+- **Project panel**: an activity-bar icon toggles a file tree of an opened folder; click a
+  Markdown/text file to open it in a tab.
+- **Split view** with a **draggable divider**; switch Editor / Split / Preview.
+- **Live preview** via Jewel's Markdown renderer (matches the IntelliJ theme) with
+  GitHub-flavored Markdown — **tables, alerts, ~~strikethrough~~, autolinks** — plus
+  headings/lists/code/quotes/links. **Syntax-highlighted code blocks**; Ctrl+Click opens links.
+- **Editor** with live Markdown **syntax highlighting** and a formatting toolbar (bold,
+  italic, code, headings, lists, quotes, links) with explanatory tooltips.
+- **Keyboard shortcuts** with a Visual-Studio-style default layout, **rebindable** in
+  Settings (shown next to each menu item).
+- **Settings** dialog (categories: Appearance / Editor / Shortcuts / About): theme,
+  **background gradient presets**, panel corners/spacing, **editor font** & size, status
+  bar, and **Reset to defaults**. Preferences and the keymap **persist across runs**.
+- **Dark theme by default** with a subtle Windows-11-Mica-style ambient gradient.
+- Status bar with caret position, dirty state and document metrics.
 
 ## Requirements
 
