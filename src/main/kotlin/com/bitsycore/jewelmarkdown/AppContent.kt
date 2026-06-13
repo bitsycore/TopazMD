@@ -6,6 +6,8 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,6 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -57,6 +63,8 @@ import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextArea
 import org.jetbrains.jewel.ui.component.Tooltip
+import java.awt.datatransfer.DataFlavor
+import java.io.File
 import org.jetbrains.jewel.ui.component.separator
 
 // Window body below the title bar: a menu bar, the document tab strip, the editor/preview
@@ -66,10 +74,24 @@ import org.jetbrains.jewel.ui.component.separator
 fun AppBody(inState: AppState) {
 	val vSettings = inState.settings
 	val vBorder = JewelTheme.globalColors.borders.normal
+
+	// Accept files dropped onto the window and open each in a tab.
+	val vDropTarget =
+		remember(inState) {
+			object : DragAndDropTarget {
+				override fun onDrop(event: DragAndDropEvent): Boolean {
+					val vFiles = droppedFiles(event).filter { it.isFile }
+					vFiles.forEach { inState.openFile(it) }
+					return vFiles.isNotEmpty()
+				}
+			}
+		}
+
 	Box(
 		Modifier
 			.fillMaxSize()
 			.background(vSettings.gradient.brush(JewelTheme.isDark))
+			.dragAndDropTarget(shouldStartDragAndDrop = { true }, target = vDropTarget)
 	) {
 		Row(Modifier.fillMaxSize()) {
 			ActivityBar(inState)
@@ -264,6 +286,7 @@ private fun TabStrip(inState: AppState) {
 	) {
 		inState.documents.forEachIndexed { vIndex, vDoc ->
 			TabItem(
+				inState = inState,
 				inDoc = vDoc,
 				inActive = vIndex == inState.activeIndex,
 				inOnSelect = { inState.activeIndex = vIndex },
@@ -275,9 +298,11 @@ private fun TabStrip(inState: AppState) {
 	}
 }
 
-// A single tab: title, dirty dot, a close affordance and a right-click context menu.
+// A single tab: title, dirty dot, a close affordance, a right-click context menu, and
+// drag-to-reorder (drag a tab left/right to move it).
 @Composable
 private fun TabItem(
+	inState: AppState,
 	inDoc: Document,
 	inActive: Boolean,
 	inOnSelect: () -> Unit,
@@ -299,6 +324,28 @@ private fun TabItem(
 					.clip(vShape)
 					.background(if (inActive) JewelTheme.globalColors.panelBackground else Color.Transparent)
 					.clickable(onClick = inOnSelect)
+					.pointerInput(inDoc) {
+						var vAccum = 0f
+						detectDragGestures(
+							onDragEnd = { vAccum = 0f },
+							onDrag = { change, dragAmount ->
+								change.consume()
+								vAccum += dragAmount.x
+								val vIdx = inState.documents.indexOf(inDoc)
+								when {
+									vIdx < 0 -> {}
+									vAccum > 70f && vIdx < inState.documents.lastIndex -> {
+										inState.moveDocument(vIdx, vIdx + 1)
+										vAccum = 0f
+									}
+									vAccum < -70f && vIdx > 0 -> {
+										inState.moveDocument(vIdx, vIdx - 1)
+										vAccum = 0f
+									}
+								}
+							},
+						)
+					}
 					.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -707,6 +754,15 @@ private fun onSaveAs(inState: AppState) {
 	val vDoc = inState.active
 	val vFile = chooseSaveFile(vDoc.file?.name ?: "untitled.md") ?: return
 	runCatching { vFile.writeText(vDoc.text) }.onSuccess { vDoc.markSaved(vFile) }
+}
+
+// Extracts dropped files from a drag-and-drop event via the AWT transferable.
+@OptIn(ExperimentalComposeUiApi::class)
+private fun droppedFiles(inEvent: DragAndDropEvent): List<File> {
+	val vTransferable = inEvent.awtTransferable
+	if (!vTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return emptyList()
+	@Suppress("UNCHECKED_CAST")
+	return (vTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>).orEmpty()
 }
 
 // Executes a bound keyboard-shortcut action against the current state.
