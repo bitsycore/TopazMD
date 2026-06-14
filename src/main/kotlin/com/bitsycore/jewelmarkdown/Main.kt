@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -34,7 +36,10 @@ import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.DecoratedWindowScope
 import org.jetbrains.jewel.window.TitleBar
+import org.jetbrains.jewel.window.defaultTitleBarStyle
 import org.jetbrains.jewel.window.newFullscreenControls
+import org.jetbrains.jewel.window.styling.TitleBarColors
+import org.jetbrains.jewel.window.styling.TitleBarStyle
 
 // True when the JVM exposes the JetBrains Runtime API used by Jewel's DecoratedWindow.
 // Detected via the com.jetbrains.JBR sentinel class; on any other JDK the app falls back to a
@@ -155,9 +160,17 @@ private fun runApp(inArgs: Array<String>): Unit = application {
 				onPreviewKeyEvent = vKeyHandler,
 			) {
 				InstallMacOsMenuBar(vState)
-				Column(Modifier.fillMaxSize()) {
-					FallbackHeader(vState)
-					Box(Modifier.weight(1f).fillMaxWidth()) { AppBody(vState) }
+				// Paint the body gradient on the whole window content so the FallbackHeader
+				// "melts into" the same background as the editor area — the Islands look.
+				Box(
+					Modifier
+						.fillMaxSize()
+						.background(vState.settings.gradient.brush(vState.isDark))
+				) {
+					Column(Modifier.fillMaxSize()) {
+						FallbackHeader(vState)
+						Box(Modifier.weight(1f).fillMaxWidth()) { AppBody(vState) }
+					}
 				}
 			}
 		}
@@ -169,8 +182,13 @@ private fun runApp(inArgs: Array<String>): Unit = application {
 // app gradient. The center stays empty when no tab is open.
 @Composable
 private fun DecoratedWindowScope.AppTitleBar(inState: AppState) {
-	val vTitleAccent = inState.settings.gradient.titleAccent(inState.isDark)
-	TitleBar(modifier = Modifier.newFullscreenControls(), gradientStartColor = vTitleAccent) {
+	// Repaint the Jewel TitleBar so it disappears into the body gradient: solid background
+	// matching the body's top stop, and a transparent 1dp underline. With these two changes
+	// the title bar becomes visually indistinguishable from the body — Islands.
+	val vTopStop = inState.settings.gradient.topStop(inState.isDark)
+	val vBaseStyle = JewelTheme.defaultTitleBarStyle
+	val vStyle = remember(vTopStop, vBaseStyle) { meltedTitleBarStyle(vBaseStyle, vTopStop) }
+	TitleBar(modifier = Modifier.newFullscreenControls(), style = vStyle) {
 		// Left: the File / Edit / View / Help menus live in the title bar itself. On macOS the
 		// same menus appear in the system menu bar instead, so we skip them here.
 		if (!kIsMac) AppMenus(inState, Modifier.align(Alignment.Start).padding(start = 8.dp))
@@ -191,18 +209,54 @@ private fun DecoratedWindowScope.AppTitleBar(inState: AppState) {
 	}
 }
 
+// Builds a TitleBarStyle that takes the same metrics/icons/sub-styles as the active theme but
+// replaces the background/border colors so the JBR-decorated title bar visually melts into the
+// body gradient (matching Islands UI). Jewel's @GenerateDataFunctions doesn't synthesize a
+// copy() helper, so we have to spell out every TitleBarColors field explicitly.
+private fun meltedTitleBarStyle(inBase: TitleBarStyle, inTopStop: Color): TitleBarStyle {
+	val vBaseColors = inBase.colors
+	val vMelted =
+		TitleBarColors(
+			background = inTopStop,
+			inactiveBackground = inTopStop,
+			content = vBaseColors.content,
+			// Jewel paints a 1dp Spacer below the TitleBar in this color. Color.Transparent
+			// would reveal the window's default white surface (a 1-pixel seam); painting the
+			// border in the same color as the title-bar background hides the seam entirely.
+			border = inTopStop,
+			fullscreenControlButtonsBackground = vBaseColors.fullscreenControlButtonsBackground,
+			titlePaneButtonHoveredBackground = vBaseColors.titlePaneButtonHoveredBackground,
+			titlePaneButtonPressedBackground = vBaseColors.titlePaneButtonPressedBackground,
+			titlePaneCloseButtonHoveredBackground = vBaseColors.titlePaneCloseButtonHoveredBackground,
+			titlePaneCloseButtonPressedBackground = vBaseColors.titlePaneCloseButtonPressedBackground,
+			iconButtonHoveredBackground = vBaseColors.iconButtonHoveredBackground,
+			iconButtonPressedBackground = vBaseColors.iconButtonPressedBackground,
+			dropdownPressedBackground = vBaseColors.dropdownPressedBackground,
+			dropdownHoveredBackground = vBaseColors.dropdownHoveredBackground,
+		)
+	return TitleBarStyle(
+		colors = vMelted,
+		metrics = inBase.metrics,
+		icons = inBase.icons,
+		dropdownStyle = inBase.dropdownStyle,
+		iconButtonStyle = inBase.iconButtonStyle,
+		paneButtonStyle = inBase.paneButtonStyle,
+		paneCloseButtonStyle = inBase.paneCloseButtonStyle,
+	)
+}
+
 // In-body header used when the JBR window-decoration API is unavailable, or when the user
 // asked for a plain OS-decorated window. The OS title bar shows the window title; this strip
 // reproduces the menus and icons that normally live in TitleBar so the app stays fully usable.
 @Composable
 private fun FallbackHeader(inState: AppState) {
-	val vTitleAccent = inState.settings.gradient.titleAccent(inState.isDark)
 	val vDoc = inState.active
+	// Transparent — the OS-decorated Window paints the body gradient behind us, and the
+	// chrome (menus/title/icons) sits flat on it like in the IntelliJ Islands look.
 	Row(
 		modifier =
 			Modifier
 				.fillMaxWidth()
-				.background(vTitleAccent)
 				.height(36.dp)
 				.padding(horizontal = 8.dp),
 		verticalAlignment = Alignment.CenterVertically,

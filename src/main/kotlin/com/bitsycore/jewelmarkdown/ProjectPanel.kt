@@ -126,9 +126,9 @@ private fun FolderGlyph(inTint: Color, inModifier: Modifier) {
 internal fun ProjectPanel(inState: AppState, inModifier: Modifier) {
 	val vRoot = inState.projectRoot
 	val vBorder = JewelTheme.globalColors.borders.normal
-	Column(inModifier.background(JewelTheme.globalColors.panelBackground.copy(alpha = 0.35f))) {
+	Column(inModifier) {
 		Row(
-			modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
+			modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 		) {
 			Text(
@@ -149,7 +149,7 @@ internal fun ProjectPanel(inState: AppState, inModifier: Modifier) {
 		} else {
 			val vExpanded = remember(vRoot.absolutePath) { mutableStateMapOf<String, Boolean>() }
 			VerticallyScrollableContainer(modifier = Modifier.fillMaxSize()) {
-				Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+				Column(Modifier.fillMaxWidth().padding(top = 2.dp)) {
 					for (vChild in childrenOf(vRoot)) {
 						FileTreeNode(vChild, 0, vExpanded, inState)
 					}

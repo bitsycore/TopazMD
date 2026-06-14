@@ -42,7 +42,6 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -77,7 +76,6 @@ import org.jetbrains.jewel.ui.component.separator
 @Composable
 fun AppBody(inState: AppState) {
 	val vSettings = inState.settings
-	val vBorder = JewelTheme.globalColors.borders.normal
 
 	// Accept files dropped onto the window and open each in a tab.
 	val vDropTarget =
@@ -97,24 +95,52 @@ fun AppBody(inState: AppState) {
 			.background(vSettings.gradient.brush(JewelTheme.isDark))
 			.dragAndDropTarget(shouldStartDragAndDrop = { true }, target = vDropTarget)
 	) {
+		// Islands-style layout: activity bar and status bar sit flat on the gradient; the only
+		// rounded "islands" are the project panel and the editor area, separated by the same
+		// content-gap value the editor card uses internally.
+		val vGap = vSettings.contentGapDp.dp
+		val vCorner = vSettings.paneCornerDp.dp
 		Row(Modifier.fillMaxSize()) {
 			ActivityBar(inState)
-			Divider(Orientation.Vertical, Modifier.fillMaxHeight(), color = vBorder)
-			if (inState.showProjectPanel) {
-				ProjectPanel(inState, Modifier.width(250.dp).fillMaxHeight())
-				Divider(Orientation.Vertical, Modifier.fillMaxHeight(), color = vBorder)
-			}
 			Column(Modifier.weight(1f).fillMaxHeight()) {
-				val vDoc = inState.active
-				if (vDoc != null) {
-					TabStrip(inState)
-					EditorAndPreview(inState, vDoc, Modifier.weight(1f).fillMaxWidth())
-					if (vSettings.showStatusBar) {
-						Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
-						StatusBar(vDoc)
+				Row(
+					modifier =
+						Modifier
+							.weight(1f)
+							.fillMaxWidth()
+							.padding(
+								// Left side stays tight (2dp) because the activity bar already
+								// provides visual margin from the window edge. The right side
+								// matches the top (8dp) so the editor island has the same
+								// breathing room from the window edge as from the title bar.
+								start = 2.dp,
+								end = 8.dp,
+								// Aligns the top of the islands with the activity bar's first
+								// icon (which sits at vertical = 8.dp inside the bar).
+								top = 8.dp,
+								bottom = if (vSettings.showStatusBar) 0.dp else vGap,
+							),
+					// Tight 2dp between the project-pane island and the editor island — they
+					// read as adjacent surfaces, not as two separate sections of the window.
+					horizontalArrangement = Arrangement.spacedBy(2.dp),
+				) {
+					if (inState.showProjectPanel) {
+						Pane(Modifier.width(250.dp).fillMaxHeight(), vCorner) {
+							ProjectPanel(inState, Modifier.fillMaxSize())
+						}
 					}
-				} else {
-					WelcomePanel(inState, Modifier.weight(1f).fillMaxWidth())
+					Box(Modifier.weight(1f).fillMaxHeight()) {
+						val vDoc = inState.active
+						if (vDoc != null) {
+							EditorAndPreview(inState, vDoc, Modifier.fillMaxSize())
+						} else {
+							WelcomePanel(inState, Modifier.fillMaxSize())
+						}
+					}
+				}
+				if (vSettings.showStatusBar) {
+					val vStatusDoc = inState.active
+					if (vStatusDoc != null) StatusBar(vStatusDoc)
 				}
 			}
 		}
@@ -352,13 +378,13 @@ private fun SettingsGlyph(inTint: Color, inModifier: Modifier) {
 // MARK: Tabs
 // ==================
 
-// Horizontal strip of open-document tabs, IntelliJ-style.
+// Horizontal strip of open-document tab pills, docked at the top of the TabbedPane card.
 @Composable
 private fun TabStrip(inState: AppState) {
 	Row(
-		modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, top = 6.dp),
-		horizontalArrangement = Arrangement.spacedBy(3.dp),
-		verticalAlignment = Alignment.Bottom,
+		modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp),
+		horizontalArrangement = Arrangement.spacedBy(4.dp),
+		verticalAlignment = Alignment.CenterVertically,
 	) {
 		inState.documents.forEachIndexed { vIndex, vDoc ->
 			TabItem(
@@ -374,8 +400,8 @@ private fun TabStrip(inState: AppState) {
 	}
 }
 
-// A single tab: title, dirty dot, a close affordance, a right-click context menu, and
-// drag-to-reorder (drag a tab left/right to move it).
+// A single tab pill: fully-rounded rectangle hosting the title, dirty dot, and close glyph,
+// with a right-click context menu and drag-to-reorder.
 @Composable
 private fun TabItem(
 	inState: AppState,
@@ -393,25 +419,20 @@ private fun TabItem(
 			ContextMenuItem("Close All", inOnCloseAll),
 		)
 	}) {
-		val vShape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)
+		val vShape = RoundedCornerShape(6.dp)
 		val vAccent = JewelTheme.globalColors.borders.focused
+		// Each tab carries its own visible background so it reads as an independent box even
+		// when inactive — matching IntelliJ's floating-pill style.
+		val vBg =
+			when {
+				inActive -> vAccent.copy(alpha = 0.18f)
+				else -> JewelTheme.globalColors.text.info.copy(alpha = 0.08f)
+			}
 		Row(
 			modifier =
 				Modifier
 					.clip(vShape)
-					.background(
-						if (inActive) {
-							JewelTheme.globalColors.panelBackground
-						} else {
-							JewelTheme.globalColors.panelBackground.copy(alpha = 0.4f)
-						}
-					)
-					.drawBehind {
-						if (inActive) {
-							val vY = 1.dp.toPx()
-							drawLine(vAccent, Offset(0f, vY), Offset(size.width, vY), strokeWidth = 2.dp.toPx())
-						}
-					}
+					.background(vBg)
 					.clickable(onClick = inOnSelect)
 					.pointerInput(inDoc) {
 						var vAccum = 0f
@@ -435,7 +456,7 @@ private fun TabItem(
 							},
 						)
 					}
-					.padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+					.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(6.dp),
 		) {
@@ -457,39 +478,61 @@ private fun TabItem(
 // MARK: Editor / preview split
 // ==================
 
-// Editor and preview as separated cards, honoring the current view mode and the configured
-// spacing/corner settings. In Split mode a draggable divider sets the editor/preview ratio.
+// Editor and preview live inside a single rounded card (matching IntelliJ's editor pane). The
+// card carries the document tab strip at the top; below the 1dp separator the body shows either
+// the editor, the preview, or — in split mode — the editor and preview side by side separated
+// only by a slim vertical divider.
 @Composable
 private fun EditorAndPreview(inState: AppState, inDoc: Document, inModifier: Modifier) {
-	val vGap = inState.settings.contentGapDp.dp
 	val vCorner = inState.settings.paneCornerDp.dp
 
-	@Composable
-	fun EditorCard(inPaneModifier: Modifier) =
-		Pane(inPaneModifier, vCorner) { EditorPane(inState, inDoc, Modifier.fillMaxSize()) }
-
-	@Composable
-	fun PreviewCard(inPaneModifier: Modifier) =
-		Pane(inPaneModifier, vCorner) {
-			MarkdownPreview(
-				inText = inDoc.text,
-				inIsDark = inState.isDark,
-				inModifier = Modifier.fillMaxSize(),
-				// IntelliJ-style: links open only on Ctrl+Click; plain clicks select text.
-				inOnUrlClick = { vUrl -> if (inState.isCtrlDown) openUrl(vUrl) },
-			)
-		}
-
-	when (inState.viewMode) {
-		ViewMode.Editor -> Row(inModifier.padding(start = vGap, end = vGap, bottom = vGap)) { EditorCard(Modifier.weight(1f).fillMaxHeight()) }
-		ViewMode.Preview -> Row(inModifier.padding(start = vGap, end = vGap, bottom = vGap)) { PreviewCard(Modifier.weight(1f).fillMaxHeight()) }
-		ViewMode.Split -> {
-			var vWidth by remember { mutableStateOf(1f) }
-			Row(modifier = inModifier.padding(start = vGap, end = vGap, bottom = vGap).onSizeChanged { vWidth = it.width.toFloat().coerceAtLeast(1f) }) {
-				EditorCard(Modifier.weight(inState.splitRatio).fillMaxHeight())
-				SplitHandle(vGap) { vDelta -> inState.splitRatio = (inState.splitRatio + vDelta / vWidth).coerceIn(0.15f, 0.85f) }
-				PreviewCard(Modifier.weight(1f - inState.splitRatio).fillMaxHeight())
+	TabbedPane(inState, vCorner, inModifier) {
+		when (inState.viewMode) {
+			ViewMode.Editor -> EditorPane(inState, inDoc, Modifier.fillMaxSize())
+			ViewMode.Preview -> PreviewBody(inState, inDoc, Modifier.fillMaxSize())
+			ViewMode.Split -> {
+				var vWidth by remember { mutableStateOf(1f) }
+				Row(
+					modifier =
+						Modifier
+							.fillMaxSize()
+							.onSizeChanged { vWidth = it.width.toFloat().coerceAtLeast(1f) },
+				) {
+					EditorPane(inState, inDoc, Modifier.weight(inState.splitRatio).fillMaxHeight())
+					SplitHandle(6.dp) { vDelta ->
+						inState.splitRatio = (inState.splitRatio + vDelta / vWidth).coerceIn(0.15f, 0.85f)
+					}
+					PreviewBody(inState, inDoc, Modifier.weight(1f - inState.splitRatio).fillMaxHeight())
+				}
 			}
+		}
+	}
+}
+
+// Markdown preview hooked up to the active document. Extracted so both split mode and the
+// preview-only view share the same wiring without duplicating the click/URL plumbing.
+@Composable
+private fun PreviewBody(inState: AppState, inDoc: Document, inModifier: Modifier) {
+	MarkdownPreview(
+		inText = inDoc.text,
+		inIsDark = inState.isDark,
+		inModifier = inModifier,
+		// IntelliJ-style: links open only on Ctrl+Click; plain clicks select text.
+		inOnUrlClick = { vUrl -> if (inState.isCtrlDown) openUrl(vUrl) },
+	)
+}
+
+// A Pane (rounded shadowed card) with the document tab strip docked at the top, separated from
+// the body by a single 1dp divider. The strip's tab pills are individually rounded with a small
+// gap between them, matching IntelliJ's tab bar.
+@Composable
+private fun TabbedPane(inState: AppState, inCorner: Dp, inModifier: Modifier, inContent: @Composable BoxScope.() -> Unit) {
+	val vBorder = JewelTheme.globalColors.borders.normal
+	Pane(inModifier, inCorner) {
+		Column(Modifier.fillMaxSize()) {
+			TabStrip(inState)
+			Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
+			Box(modifier = Modifier.weight(1f).fillMaxWidth(), content = inContent)
 		}
 	}
 }

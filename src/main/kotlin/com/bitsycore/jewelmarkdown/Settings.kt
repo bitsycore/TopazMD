@@ -57,14 +57,20 @@ enum class GradientPreset(
 	),
 	;
 
-	// Diagonal linear gradient for the current theme.
+	// Vertical (top-to-bottom) gradient for the current theme. Vertical — not diagonal — so
+	// that the very top edge is uniformly the first stop across the full window width; the
+	// melted title bar paints that same color, so the seam between title bar and body is
+	// invisible in the Islands layout.
 	fun brush(inIsDark: Boolean): Brush {
 		val vStops = if (inIsDark) darkStops else lightStops
-		return Brush.linearGradient(0.0f to vStops[0], 0.45f to vStops[1], 1.0f to vStops[2])
+		return Brush.verticalGradient(0.0f to vStops[0], 0.45f to vStops[1], 1.0f to vStops[2])
 	}
 
 	// Title-bar accent color for the current theme.
 	fun titleAccent(inIsDark: Boolean): Color = if (inIsDark) darkAccent else lightAccent
+
+	// First gradient stop — used when the title bar should "melt into" the body gradient.
+	fun topStop(inIsDark: Boolean): Color = if (inIsDark) darkStops[0] else lightStops[0]
 }
 
 // Editor font family choices.
