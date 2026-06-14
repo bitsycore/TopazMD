@@ -121,7 +121,10 @@ fun AppBody(inState: AppState) {
 								// Aligns the top of the islands with the activity bar's first
 								// icon (which sits at vertical = 8.dp inside the bar).
 								top = 8.dp,
-								bottom = if (vSettings.showStatusBar) 0.dp else vGap,
+								// When the status bar is on it provides its own 6dp vertical
+								// padding; when off we still want a small margin so the islands
+								// don't touch the window edge — 2dp minimum.
+								bottom = if (vSettings.showStatusBar) 0.dp else 2.dp,
 							),
 					// Tight 2dp between the project-pane island and the editor island — they
 					// read as adjacent surfaces, not as two separate sections of the window.
@@ -142,8 +145,9 @@ fun AppBody(inState: AppState) {
 					}
 				}
 				if (vSettings.showStatusBar) {
-					val vStatusDoc = inState.active
-					if (vStatusDoc != null) StatusBar(vStatusDoc)
+					// Always render the status bar so the islands always have a visible bottom
+					// margin. With no active doc the bar just shows a "no document" label.
+					StatusBar(inState.active)
 				}
 			}
 		}
@@ -662,30 +666,36 @@ private fun HelperButton(inLabel: String, inName: String, inHelp: String, inOnCl
 	}
 }
 
-// Bottom status bar: file path, dirty state and document metrics, in muted text.
+// Bottom status bar: file path, dirty state and document metrics, in muted text. With no
+// active document we still render the bar (so the layout keeps a consistent bottom margin)
+// and show a single "No document" label in place of the metrics.
 @Composable
-private fun StatusBar(inDoc: Document) {
-	val vDoc = inDoc
-	val vText = vDoc.text
-	val vLineCount = if (vText.isEmpty()) 0 else vText.count { it == '\n' } + 1
-	val vWordCount = if (vText.isBlank()) 0 else vText.trim().split(Regex("\\s+")).size
+private fun StatusBar(inDoc: Document?) {
 	val vMuted = JewelTheme.globalColors.text.info
-
-	// Caret position (1-based line/column) from the current selection.
-	val vCaret = vDoc.fieldValue.selection.start.coerceIn(0, vText.length)
-	val vBeforeCaret = vText.substring(0, vCaret)
-	val vCaretLine = vBeforeCaret.count { it == '\n' } + 1
-	val vCaretCol = vCaret - (vBeforeCaret.lastIndexOf('\n') + 1) + 1
-
 	Row(
 		modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
 		horizontalArrangement = Arrangement.spacedBy(16.dp),
 		verticalAlignment = Alignment.CenterVertically,
 	) {
-		Text(vDoc.file?.absolutePath ?: "Unsaved document", color = vMuted, fontSize = 12.sp)
+		if (inDoc == null) {
+			Text("No document", color = vMuted, fontSize = 12.sp)
+			Spacer(Modifier.weight(1f))
+			return@Row
+		}
+		val vText = inDoc.text
+		val vLineCount = if (vText.isEmpty()) 0 else vText.count { it == '\n' } + 1
+		val vWordCount = if (vText.isBlank()) 0 else vText.trim().split(Regex("\\s+")).size
+
+		// Caret position (1-based line/column) from the current selection.
+		val vCaret = inDoc.fieldValue.selection.start.coerceIn(0, vText.length)
+		val vBeforeCaret = vText.substring(0, vCaret)
+		val vCaretLine = vBeforeCaret.count { it == '\n' } + 1
+		val vCaretCol = vCaret - (vBeforeCaret.lastIndexOf('\n') + 1) + 1
+
+		Text(inDoc.file?.absolutePath ?: "Unsaved document", color = vMuted, fontSize = 12.sp)
 		Spacer(Modifier.weight(1f))
 		Text("Ln $vCaretLine, Col $vCaretCol", color = vMuted, fontSize = 12.sp)
-		Text(if (vDoc.isDirty) "Modified" else "Saved", color = vMuted, fontSize = 12.sp)
+		Text(if (inDoc.isDirty) "Modified" else "Saved", color = vMuted, fontSize = 12.sp)
 		Text("$vLineCount lines", color = vMuted, fontSize = 12.sp)
 		Text("$vWordCount words", color = vMuted, fontSize = 12.sp)
 		Text("${vText.length} chars", color = vMuted, fontSize = 12.sp)
