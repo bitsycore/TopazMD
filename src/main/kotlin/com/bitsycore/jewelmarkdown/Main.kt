@@ -56,11 +56,17 @@ fun main(inArgs: Array<String>) {
 	// and stops flashing white during scroll. Must be set before any Compose window is created.
 	System.setProperty("compose.interop.blending", "true")
 
+	// JavaFX prints an "Unsupported JavaFX configuration" warning when it's loaded from the
+	// classpath instead of the JPMS module path — harmless in a non-modular Compose Desktop
+	// app, but noisy in the run log. Silence its informational loggers.
+	java.util.logging.Logger.getLogger("javafx").level = java.util.logging.Level.SEVERE
+	java.util.logging.Logger.getLogger("com.sun.javafx").level = java.util.logging.Level.SEVERE
+
 	// macOS only: route the app's Swing JMenuBar to the system menu bar at the top of the
 	// screen instead of inside the window. Both properties must be set before AWT initializes.
 	if (kIsMac) {
 		System.setProperty("apple.laf.useScreenMenuBar", "true")
-		System.setProperty("apple.awt.application.name", "Jewel Markdown")
+		System.setProperty("apple.awt.application.name", "JMD")
 	}
 
 	runApp(inArgs)

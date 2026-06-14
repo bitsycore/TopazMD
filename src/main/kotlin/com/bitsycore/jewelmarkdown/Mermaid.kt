@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import javafx.application.Platform
+import javafx.concurrent.Worker
 import javafx.embed.swing.JFXPanel
 import javafx.scene.Scene
 import javafx.scene.paint.Color as FxColor
@@ -32,17 +33,27 @@ import org.jetbrains.jewel.markdown.extensions.MarkdownRendererExtension
 import org.jetbrains.jewel.markdown.rendering.InlineMarkdownRenderer
 import org.jetbrains.jewel.markdown.rendering.MarkdownBlockRenderer
 import org.jetbrains.jewel.ui.component.Text
+import java.awt.event.MouseWheelEvent
+import javax.swing.SwingUtilities
 
 // Mermaid diagrams are rendered through an embedded JavaFX WebView (WebKit) — small footprint,
 // no native conflict with JBR's bundled JCEF, fully offline once mermaid.min.js is bundled.
 // mermaid.min.js is downloaded into resources at build time by the `downloadMermaid` Gradle task.
+//
+// Performance design: at startup we pre-warm a pool of WebViews that already have mermaid.js
+// parsed in their JS context. To render a diagram we hand one out and call window.setMermaid()
+// — no page reload, no mermaid.js re-parse. Editing an existing diagram is also a JS call on
+// the same WebView, so updates are instant.
 
 // Status of the JavaFX runtime, observed by the renderer to switch between a placeholder and an
 // actual WebView-backed view.
 enum class MermaidStatus { NotStarted, Initializing, Ready, Failed }
 
-// Global handle to JavaFX readiness — JFXPanel implicitly boots the JavaFX platform on first
-// construction, but constructing it has thread/AWT side effects we want to do exactly once.
+// How many WebViews are kept primed (mermaid.js loaded, ready to render). One is consumed each
+// time a new diagram is first displayed; the pool is topped up asynchronously.
+private const val kPrimedPoolTarget = 2
+
+// Global handle to JavaFX readiness and the warmup WebView pool.
 object MermaidRuntime {
 	var status by mutableStateOf(MermaidStatus.NotStarted)
 		private set
@@ -60,41 +71,94 @@ object MermaidRuntime {
 			?: ""
 	}
 
-	// Triggers JavaFX initialization in the background. JFXPanel() must be created on the EDT;
-	// once any JFXPanel exists the JavaFX Application Thread is running, and Platform.runLater
-	// works for the rest of the JVM's lifetime.
+	// Pre-warmed WebViews. Each one has loaded the shell HTML below and parsed mermaid.js; its
+	// JS context exposes a window.setMermaid(source, theme) function ready to be called.
+	// Accessed only from the JavaFX Application Thread.
+	private val primedPool: ArrayDeque<WebView> = ArrayDeque()
+
+	// Boots JavaFX and starts populating the WebView pool. Safe to call multiple times.
 	suspend fun ensureInitialized() {
 		if (status != MermaidStatus.NotStarted) return
 		status = MermaidStatus.Initializing
 		withContext(Dispatchers.IO) {
 			runCatching {
-				// Keep JavaFX alive even when all JFXPanels are temporarily detached during recomposition.
-				javax.swing.SwingUtilities.invokeAndWait { JFXPanel() }
+				// Constructing the first JFXPanel boots the JavaFX Application Thread; must
+				// happen on the EDT.
+				SwingUtilities.invokeAndWait { JFXPanel() }
 				Platform.setImplicitExit(false)
 				status = MermaidStatus.Ready
+				Platform.runLater { topUpPool() }
 			}.onFailure { status = MermaidStatus.Failed }
 		}
 	}
 
-	// Builds the HTML wrapper that renders a single Mermaid diagram via the bundled mermaid.js.
-	fun buildHtml(inSource: String, inIsDark: Boolean): String {
+	// Adds new WebViews to the pool until it hits the target. Each one immediately loads the
+	// shell HTML; once Worker.SUCCEEDED fires it can be checked out and used.
+	private fun topUpPool() {
+		while (primedPool.size < kPrimedPoolTarget) {
+			val vView = buildPrimedWebView()
+			primedPool.addLast(vView)
+		}
+	}
+
+	// Creates one WebView, starts loading the shell HTML on it, and returns it immediately. The
+	// caller is responsible for waiting on Worker.SUCCEEDED before calling setMermaid().
+	private fun buildPrimedWebView(): WebView {
+		val vView = WebView().apply {
+			isContextMenuEnabled = false
+			style = "-fx-background-color: transparent;"
+		}
+		vView.engine.loadContent(buildShellHtml())
+		return vView
+	}
+
+	// Hands out one WebView from the pool. If the pool is empty (e.g. several diagrams opened
+	// at once), a fresh one is built on the spot. After checkout we top the pool up again so
+	// subsequent diagrams stay instant. Must be called on the JavaFX Application Thread.
+	fun checkoutWebView(): WebView {
+		val vView = primedPool.removeFirstOrNull() ?: buildPrimedWebView()
+		topUpPool()
+		return vView
+	}
+
+	// Returns whether the WebView has finished loading the shell HTML. Until this is true,
+	// callers must wait — calling executeScript("setMermaid(...)") on a still-loading page
+	// raises an error in the WebKit engine.
+	fun isReady(inView: WebView): Boolean =
+		inView.engine.loadWorker.state == Worker.State.SUCCEEDED
+
+	// Updates the diagram displayed in the given primed WebView. Replaces just the diagram
+	// source via the setMermaid() JS function — much faster than re-loading the full HTML
+	// because mermaid.js stays parsed and the WebKit context is reused.
+	fun renderInto(inView: WebView, inSource: String, inIsDark: Boolean) {
 		val vTheme = if (inIsDark) "dark" else "default"
-		val vFg = if (inIsDark) "#e0e0e0" else "#1f1f1f"
-		val vEscaped =
-			inSource
-				.replace("&", "&amp;")
-				.replace("<", "&lt;")
-				.replace(">", "&gt;")
-		// The page itself is transparent so it composites onto the Compose pane behind the
-		// WebView; that avoids the white flash when the pane scrolls under the heavyweight
-		// JavaFX surface. The diagram's own colors come from Mermaid's chosen theme.
+		val vEscaped = jsEscape(inSource)
+		val vScript = "window.setMermaid && window.setMermaid('$vEscaped', '$vTheme');"
+		inView.engine.executeScript(vScript)
+	}
+
+	// JS string-literal escaping for the small set of characters that can appear in a Mermaid
+	// diagram and break a single-quoted string literal.
+	private fun jsEscape(inText: String): String =
+		inText
+			.replace("\\", "\\\\")
+			.replace("'", "\\'")
+			.replace("\n", "\\n")
+			.replace("\r", "")
+			.replace(" ", "\\u2028")
+			.replace(" ", "\\u2029")
+
+	// Builds the shell HTML loaded once into every primed WebView. Bundles mermaid.js and
+	// exposes a window.setMermaid(source, theme) function the host calls to swap the diagram
+	// without reparsing the whole page.
+	private fun buildShellHtml(): String {
 		return """
 			<!doctype html>
 			<html>
 			<head>
 				<meta charset="utf-8">
 				<style>
-					html, body { margin: 0; padding: 0; background: transparent; color: $vFg; overflow: hidden; }
+					html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
 					body { display: flex; align-items: center; justify-content: center; height: 100vh; }
 					::-webkit-scrollbar { display: none; }
 					.mermaid { font-family: -apple-system, system-ui, sans-serif; max-width: 100%; max-height: 100%; }
@@ -102,9 +166,19 @@ object MermaidRuntime {
 				</style>
 			</head>
 			<body>
-				<pre class="mermaid">$vEscaped</pre>
+				<pre id="m" class="mermaid"></pre>
 				<script>$mermaidJs</script>
-				<script>mermaid.initialize({ startOnLoad: true, theme: '$vTheme', securityLevel: 'loose' });</script>
+				<script>
+					window.setMermaid = async function(source, theme) {
+						try {
+							mermaid.initialize({ startOnLoad: false, theme: theme, securityLevel: 'loose' });
+							var node = document.getElementById('m');
+							node.removeAttribute('data-processed');
+							node.textContent = source;
+							await mermaid.run({ nodes: [node] });
+						} catch (e) { console.error(e); }
+					};
+				</script>
 			</body>
 			</html>
 		""".trimIndent()
@@ -171,34 +245,57 @@ fun MermaidView(inSource: String, inIsDark: Boolean, inModifier: Modifier = Modi
 }
 
 // Hosts the actual JavaFX WebView via SwingPanel. The panel itself is stable across
-// recompositions; only the loaded HTML changes when the source or theme update. Every layer in
-// the JFX stack is made transparent so any heavyweight repaint blends with the Compose pane
-// behind it instead of flashing white during scroll.
+// recompositions. On first mount we check out a primed WebView from the runtime; later source
+// or theme changes just call window.setMermaid() via JS so mermaid.js never re-parses.
 @Composable
 private fun MermaidWebView(inSource: String, inIsDark: Boolean) {
-	val vHtml = remember(inSource, inIsDark) { MermaidRuntime.buildHtml(inSource, inIsDark) }
 	val vPanel =
 		remember {
-			JFXPanel().apply {
-				isOpaque = false
-				background = java.awt.Color(0, 0, 0, 0)
+			object : JFXPanel() {
+				init {
+					isOpaque = false
+					background = java.awt.Color(0, 0, 0, 0)
+				}
+
+				// Override Swing's wheel dispatch BEFORE the event reaches JavaFX, so the
+				// markdown preview's scroll container keeps consuming the wheel even when the
+				// pointer sits over the embedded WebView.
+				override fun processMouseWheelEvent(e: MouseWheelEvent) {
+					val vParent = parent ?: return
+					val vPoint = SwingUtilities.convertPoint(this, e.x, e.y, vParent)
+					vParent.dispatchEvent(
+						MouseWheelEvent(
+							vParent,
+							e.id,
+							e.`when`,
+							e.modifiersEx,
+							vPoint.x,
+							vPoint.y,
+							e.xOnScreen,
+							e.yOnScreen,
+							e.clickCount,
+							e.isPopupTrigger,
+							e.scrollType,
+							e.scrollAmount,
+							e.wheelRotation,
+							e.preciseWheelRotation,
+						)
+					)
+				}
 			}
 		}
 	val vWebView = remember { arrayOfNulls<WebView>(1) }
 
-	LaunchedEffect(vHtml) {
+	LaunchedEffect(inSource, inIsDark) {
 		Platform.runLater {
 			val vExisting = vWebView[0]
 			if (vExisting == null) {
-				val vNew = WebView().apply {
-					isContextMenuEnabled = false
-					style = "-fx-background-color: transparent;"
-				}
+				val vNew = MermaidRuntime.checkoutWebView()
 				vWebView[0] = vNew
 				vPanel.scene = Scene(vNew).apply { fill = FxColor.TRANSPARENT }
-				vNew.engine.loadContent(vHtml)
+				renderWhenReady(vNew, inSource, inIsDark)
 			} else {
-				vExisting.engine.loadContent(vHtml)
+				renderWhenReady(vExisting, inSource, inIsDark)
 			}
 		}
 	}
@@ -207,6 +304,21 @@ private fun MermaidWebView(inSource: String, inIsDark: Boolean) {
 		modifier = Modifier.fillMaxWidth(),
 		factory = { vPanel },
 	)
+}
+
+// Calls renderInto immediately if the WebView's shell is done loading, otherwise hooks the
+// Worker.SUCCEEDED state change and renders then. Either way the diagram appears as soon as
+// the WebKit context is ready — usually instantly since pool entries finish loading at startup.
+private fun renderWhenReady(inView: WebView, inSource: String, inIsDark: Boolean) {
+	if (MermaidRuntime.isReady(inView)) {
+		MermaidRuntime.renderInto(inView, inSource, inIsDark)
+		return
+	}
+	inView.engine.loadWorker.stateProperty().addListener { _, _, vNewState ->
+		if (vNewState == Worker.State.SUCCEEDED) {
+			MermaidRuntime.renderInto(inView, inSource, inIsDark)
+		}
+	}
 }
 
 // Pre-render fallback content: shows the diagram source in muted text so the user still sees
