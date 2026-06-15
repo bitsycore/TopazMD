@@ -29,6 +29,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.rememberPopupPositionProviderAtPosition
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.Orientation
+import org.jetbrains.jewel.ui.component.ContextMenuDivider
 import org.jetbrains.jewel.ui.component.Divider
 import org.jetbrains.jewel.ui.component.Text
 
@@ -85,8 +86,20 @@ private fun ThemedContextMenuPanel(inItems: List<ContextMenuItem>, inOnClick: (C
 		// Divider is the same Jewel component used by the editor card; uses a more saturated
 		// 18% wash than the outer outline so the separator actually reads inside the panel.
 		val vDividerColor = JewelTheme.globalColors.text.normal.copy(alpha = 0.18f)
+		// When the items list contains explicit ContextMenuDivider markers (Jewel emits these
+		// to flag where a separator should appear), respect them and skip the implicit
+		// "separator before the last item" heuristic so we don't double up.
+		val vHasExplicit = inItems.any { it is ContextMenuDivider }
 		for ((vIdx, vItem) in inItems.withIndex()) {
-			if (separatorBefore(inItems, vIdx)) {
+			if (vItem is ContextMenuDivider) {
+				Divider(
+					Orientation.Horizontal,
+					Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 6.dp),
+					color = vDividerColor,
+				)
+				continue
+			}
+			if (!vHasExplicit && separatorBefore(inItems, vIdx)) {
 				Divider(
 					Orientation.Horizontal,
 					Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 6.dp),
