@@ -6,7 +6,9 @@ name: Release
 on:
   push:
     tags:
+      # Match both `v1.0.0` and bare `1.0.0` style tags (and any -rc / -beta suffix variant).
       - 'v*'
+      - '[0-9]*'
   workflow_dispatch:
 
 jobs:
