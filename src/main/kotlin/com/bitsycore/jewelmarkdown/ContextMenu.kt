@@ -70,13 +70,13 @@ private fun ThemedContextMenuPanel(inItems: List<ContextMenuItem>, inOnClick: (C
 	val vShape = RoundedCornerShape(6.dp)
 	val vOutline = JewelTheme.globalColors.text.normal.copy(alpha = 0.1f)
 	// Sized via widthIn (min/max) only — combining widthIn with IntrinsicSize.Max produced
-	// pathological measurements with fillMaxWidth rows, which is what made the menu fill the
-	// window earlier. Letting the rows fill the Column and capping the Column at 320dp
-	// gives a predictable popup that doesn't drop items.
+	// pathological measurements with fillMaxWidth rows, which made the menu fill the window
+	// earlier. Rows fill the Column; the Column itself caps at ~220dp so the popup feels like
+	// a native compact context menu.
 	Column(
 		modifier =
 			Modifier
-				.widthIn(min = 200.dp, max = 320.dp)
+				.widthIn(min = 140.dp, max = 220.dp)
 				.clip(vShape)
 				.background(JewelTheme.globalColors.panelBackground)
 				.border(1.dp, vOutline, vShape)
@@ -118,10 +118,12 @@ private fun ContextMenuRow(inLabel: String, inOnClick: () -> Unit) {
 	}
 }
 
-// Locale-independent heuristic for splitting the menu: when there are four or more entries,
-// insert a divider before the last one. Matches the standard text-context-menu layout where
-// Cut / Copy / Paste are followed by "Select All" (in any locale — we don't need to match the
-// label text). Three-item menus (e.g. the tab context menu's Close / Close Others / Close All)
-// stay flat with no separator.
+// Locale-independent heuristic for splitting the menu: when there are three or more entries,
+// insert a divider before the last one. Compose's BasicTextField filters Cut/Copy/Paste out
+// when their action is null (empty clipboard, no selection, etc.), so a "real" text menu can
+// surface as Cut+Copy+SelectAll (3 entries) or Paste+SelectAll (2). The "≥ 3" rule groups the
+// destructive/edit ops away from the trailing "select all" in either count, and also reads
+// nicely on the tab menu (Close / Close Others / Close All) where the last item is the
+// most-destructive option.
 private fun separatorBefore(inItems: List<ContextMenuItem>, inIdx: Int): Boolean =
-	inItems.size >= 4 && inIdx == inItems.lastIndex
+	inItems.size >= 3 && inIdx == inItems.lastIndex
