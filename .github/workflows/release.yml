@@ -52,18 +52,28 @@ jobs:
 
       # Per-platform installer tasks split out so each format shows as its own step in the
       # CI log — easier to spot which one failed if one of them does, and `--stacktrace`
-      # produces a usable error trace inline.
+      # produces a usable error trace inline. Each installer is copied to the workspace
+      # root after build so the upload-artifact step (and the release job's `artifacts/*`
+      # glob) finds it as a top-level file rather than buried under build/compose/binaries.
       - name: Build DMG installer (macOS)
         if: matrix.platform == 'macos'
-        run: ./gradlew --no-daemon packageReleaseDmg --stacktrace
+        run: |
+          ./gradlew --no-daemon packageReleaseDmg --stacktrace
+          cp build/compose/binaries/main-release/dmg/*.dmg "$GITHUB_WORKSPACE/"
 
       - name: Build MSI installer (Windows)
         if: matrix.platform == 'windows'
-        run: ./gradlew --no-daemon packageReleaseMsi --stacktrace
+        shell: bash
+        run: |
+          ./gradlew --no-daemon packageReleaseMsi --stacktrace
+          cp build/compose/binaries/main-release/msi/*.msi "$GITHUB_WORKSPACE/"
 
       - name: Build DEB + RPM installers (Linux)
         if: matrix.platform == 'linux'
-        run: ./gradlew --no-daemon packageReleaseDeb packageReleaseRpm --stacktrace
+        run: |
+          ./gradlew --no-daemon packageReleaseDeb packageReleaseRpm --stacktrace
+          cp build/compose/binaries/main-release/deb/*.deb "$GITHUB_WORKSPACE/"
+          cp build/compose/binaries/main-release/rpm/*.rpm "$GITHUB_WORKSPACE/"
 
       - name: Zip standalone .app (macOS)
         if: matrix.platform == 'macos'
@@ -140,16 +150,20 @@ jobs:
 
           ARCH=x86_64 "$APPIMAGETOOL" --no-appstream AppDir "${{ github.workspace }}/JewelMarkdown-x86_64.AppImage"
 
+      # All installer + standalone files now live at the workspace root, so the upload
+      # uses flat globs. Result on download: a single artifacts/ directory with every file
+      # at the top level — no nested build/compose/binaries/… paths to trip up the release
+      # job's `files: artifacts/*` glob.
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
           name: dist-${{ matrix.platform }}
           if-no-files-found: ignore
           path: |
-            build/compose/binaries/main-release/dmg/*.dmg
-            build/compose/binaries/main-release/msi/*.msi
-            build/compose/binaries/main-release/deb/*.deb
-            build/compose/binaries/main-release/rpm/*.rpm
+            *.dmg
+            *.msi
+            *.deb
+            *.rpm
             JewelMarkdown-macos.zip
             JewelMarkdown-windows.zip
             JewelMarkdown-linux.tar.gz
