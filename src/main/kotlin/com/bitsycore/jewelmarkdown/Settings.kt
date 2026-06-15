@@ -96,6 +96,10 @@ class Settings {
 	var editorFont by mutableStateOf(EditorFont.Monospace)
 	var editorFontSizeSp by mutableStateOf(13f)
 
+	// When on, long lines wrap inside the editor's width. When off, lines extend horizontally
+	// and the editor gains a horizontal scrollbar.
+	var editorWordWrap by mutableStateOf(true)
+
 	// Whether the bottom status bar is shown.
 	var showStatusBar by mutableStateOf(true)
 
@@ -120,6 +124,7 @@ class Settings {
 		contentGapDp = 12f
 		editorFont = EditorFont.Monospace
 		editorFontSizeSp = 13f
+		editorWordWrap = true
 		showStatusBar = true
 		showMemoryUsage = true
 		restoreSession = true

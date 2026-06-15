@@ -24,6 +24,7 @@ object Persistence {
 		vProps.getProperty("paneCorner")?.toFloatOrNull()?.let { vSettings.paneCornerDp = it }
 		vProps.getProperty("contentGap")?.toFloatOrNull()?.let { vSettings.contentGapDp = it }
 		vProps.getProperty("editorFontSize")?.toFloatOrNull()?.let { vSettings.editorFontSizeSp = it }
+		vProps.getProperty("editorWordWrap")?.toBooleanStrictOrNull()?.let { vSettings.editorWordWrap = it }
 		vProps.getProperty("showStatusBar")?.toBooleanStrictOrNull()?.let { vSettings.showStatusBar = it }
 		vProps.getProperty("showMemoryUsage")?.toBooleanStrictOrNull()?.let { vSettings.showMemoryUsage = it }
 		vProps.getProperty("restoreSession")?.toBooleanStrictOrNull()?.let { vSettings.restoreSession = it }
@@ -54,6 +55,7 @@ object Persistence {
 		vProps.setProperty("paneCorner", vSettings.paneCornerDp.toString())
 		vProps.setProperty("contentGap", vSettings.contentGapDp.toString())
 		vProps.setProperty("editorFontSize", vSettings.editorFontSizeSp.toString())
+		vProps.setProperty("editorWordWrap", vSettings.editorWordWrap.toString())
 		vProps.setProperty("showStatusBar", vSettings.showStatusBar.toString())
 		vProps.setProperty("showMemoryUsage", vSettings.showMemoryUsage.toString())
 		vProps.setProperty("restoreSession", vSettings.restoreSession.toString())

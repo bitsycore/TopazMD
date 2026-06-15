@@ -57,7 +57,10 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -615,54 +618,107 @@ private fun Pane(inModifier: Modifier, inCornerDp: Dp, inContent: @Composable Bo
 	)
 }
 
-// Editor pane: a Markdown formatting toolbar above the raw text area, with a thin change
-// gutter on the left edge that paints a stripe for each line modified since the last save.
-// The text area and the gutter share a single vertical scroll, so the stripes stay aligned
-// with the rendered lines even when the document is taller than the viewport.
+// Editor pane: a Markdown formatting toolbar above the raw text area, with a line-number
+// gutter and a thin change-gutter on the left. Text area, change gutter and line numbers all
+// share the same vertical scroll, so they stay aligned even on documents taller than the
+// viewport. When word wrap is off the whole row also gains a horizontal scroll.
 @Composable
 private fun EditorPane(inState: AppState, inDoc: Document, inModifier: Modifier) {
 	var vLayout by remember(inDoc) { mutableStateOf<TextLayoutResult?>(null) }
-	val vChanged = remember(inDoc.fieldValue.text, inDoc.savedText) {
-		computeChangedLines(inDoc.savedText, inDoc.fieldValue.text)
-	}
+	val vText = inDoc.fieldValue.text
+	val vChanged = remember(vText, inDoc.savedText) { computeChangedLines(inDoc.savedText, vText) }
+	val vEditorStyle =
+		JewelTheme.defaultTextStyle.copy(
+			fontFamily = inState.settings.editorFont.family,
+			fontSize = inState.settings.editorFontSizeSp.sp,
+			color = JewelTheme.globalColors.text.normal,
+		)
+	val vWrap = inState.settings.editorWordWrap
 	val vScrollState = rememberScrollState()
+	val vHScrollState = rememberScrollState()
+
 	Column(inModifier) {
 		MarkdownToolbar(inState)
 		Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = JewelTheme.globalColors.borders.normal)
 		Box(
 			modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(vScrollState),
 		) {
-			Row(
-				modifier = Modifier.fillMaxWidth().padding(10.dp),
-				verticalAlignment = Alignment.Top,
-			) {
-				ChangeGutter(vLayout, vChanged)
+			val vRowModifier =
+				if (vWrap) Modifier.fillMaxWidth().padding(10.dp)
+				else Modifier.horizontalScroll(vHScrollState).padding(10.dp)
+			Row(modifier = vRowModifier, verticalAlignment = Alignment.Top) {
+				LineNumbersGutter(vLayout, vText, vEditorStyle)
+				Spacer(Modifier.width(4.dp))
+				ChangeGutter(vLayout, vText, vChanged)
 				Spacer(Modifier.width(6.dp))
-				EditorTextArea(inState, inDoc, Modifier.weight(1f)) { vLayout = it }
+				EditorTextArea(
+					inDoc = inDoc,
+					inIsDark = inState.isDark,
+					inStyle = vEditorStyle,
+					inWrap = vWrap,
+					inModifier = if (vWrap) Modifier.weight(1f) else Modifier,
+					inOnTextLayout = { vLayout = it },
+				)
 			}
 		}
 	}
 }
 
-// Vertical strip painted with a stripe per line that differs from the last-saved content.
-// Sized to the text layout's full height so it scrolls together with the editor text inside
-// the shared vertical scroll container.
+// Left-margin gutter that prints a line number for every logical line of the document. When a
+// logical line wraps, only its first visual sub-line gets a number — wrapped continuations stay
+// blank so the column still reads as "one number per source line". Width auto-fits the largest
+// number to keep things tight.
 @Composable
-private fun ChangeGutter(inLayout: TextLayoutResult?, inChanged: Set<Int>) {
+private fun LineNumbersGutter(inLayout: TextLayoutResult?, inText: String, inStyle: TextStyle) {
+	val vDensity = LocalDensity.current
+	val vTextMeasurer = rememberTextMeasurer()
+	val vMuted = JewelTheme.globalColors.text.info
+	val vNumberStyle = remember(inStyle, vMuted) { inStyle.copy(color = vMuted) }
+	val vLogicalCount = remember(inText) { inText.count { it == '\n' } + 1 }
+	val vWidestMeasure =
+		remember(vLogicalCount, vNumberStyle) { vTextMeasurer.measure(vLogicalCount.toString(), vNumberStyle) }
+	val vWidthDp = with(vDensity) { vWidestMeasure.size.width.toDp() }
+	val vHeightDp = with(vDensity) { (inLayout?.size?.height ?: 0).toDp() }
+
+	Canvas(modifier = Modifier.width(vWidthDp).height(vHeightDp)) {
+		val vLayout2 = inLayout ?: return@Canvas
+		var vLogicalIdx = 1
+		for (vVisualIdx in 0 until vLayout2.lineCount) {
+			val vStart = vLayout2.getLineStart(vVisualIdx)
+			val vIsLogicalStart = vVisualIdx == 0 || (vStart > 0 && inText[vStart - 1] == '\n')
+			if (!vIsLogicalStart) continue
+			val vMeasure = vTextMeasurer.measure(vLogicalIdx.toString(), vNumberStyle)
+			val vTop = vLayout2.getLineTop(vVisualIdx)
+			drawText(vMeasure, topLeft = Offset(size.width - vMeasure.size.width, vTop))
+			vLogicalIdx++
+		}
+	}
+}
+
+// Vertical strip painted with a stripe per *logical* line that differs from the last-saved
+// content. The stripe spans every visual sub-line of a wrapped logical line so the indicator
+// still reads as "this source line is modified" when wrap is on.
+@Composable
+private fun ChangeGutter(inLayout: TextLayoutResult?, inText: String, inChanged: Set<Int>) {
 	val vColor = Color(0xFFE2A03F)
 	val vDensity = LocalDensity.current
 	val vHeightDp = with(vDensity) { (inLayout?.size?.height ?: 0).toDp() }
 	Canvas(modifier = Modifier.width(3.dp).height(vHeightDp)) {
 		val vLayout2 = inLayout ?: return@Canvas
-		for (vLineIdx in inChanged) {
-			if (vLineIdx >= vLayout2.lineCount) continue
-			val vTop = vLayout2.getLineTop(vLineIdx)
-			val vBottom = vLayout2.getLineBottom(vLineIdx)
-			drawRect(
-				color = vColor,
-				topLeft = Offset(0f, vTop),
-				size = Size(size.width, vBottom - vTop),
-			)
+		var vLogicalIdx = 0
+		for (vVisualIdx in 0 until vLayout2.lineCount) {
+			val vStart = vLayout2.getLineStart(vVisualIdx)
+			val vIsLogicalStart = vVisualIdx == 0 || (vStart > 0 && inText[vStart - 1] == '\n')
+			if (vIsLogicalStart && vVisualIdx > 0) vLogicalIdx++
+			if (vLogicalIdx in inChanged) {
+				val vTop = vLayout2.getLineTop(vVisualIdx)
+				val vBottom = vLayout2.getLineBottom(vVisualIdx)
+				drawRect(
+					color = vColor,
+					topLeft = Offset(0f, vTop),
+					size = Size(size.width, vBottom - vTop),
+				)
+			}
 		}
 	}
 }
@@ -687,37 +743,34 @@ private fun computeChangedLines(inSaved: String, inCurrent: String): Set<Int> {
 // Raw Markdown editor, monospace, with live Markdown syntax highlighting. We use the lower-
 // level BasicTextField so we own scrolling (shared with the change gutter via a parent
 // verticalScroll) and so we can keep the VisualTransformation-based syntax highlighting —
-// the newer TextFieldState API doesn't support inline styled output.
+// the newer TextFieldState API doesn't support inline styled output. The wrap flag controls
+// whether the field fills its row width (wrap = on) or asks for its intrinsic, possibly very
+// wide, content width (wrap = off, the row above provides horizontal scrolling).
 @Composable
 private fun EditorTextArea(
-	inState: AppState,
 	inDoc: Document,
+	inIsDark: Boolean,
+	inStyle: TextStyle,
+	inWrap: Boolean,
 	inModifier: Modifier,
 	inOnTextLayout: (TextLayoutResult) -> Unit = {},
 ) {
-	val vDoc = inDoc
-	val vEditorStyle =
-		JewelTheme.defaultTextStyle.copy(
-			fontFamily = inState.settings.editorFont.family,
-			fontSize = inState.settings.editorFontSizeSp.sp,
-			color = JewelTheme.globalColors.text.normal,
-		)
-	val vTransformation = remember(inState.isDark) { MarkdownSyntaxTransformation(inState.isDark) }
+	val vTransformation = remember(inIsDark) { MarkdownSyntaxTransformation(inIsDark) }
 	Box(modifier = inModifier) {
-		if (vDoc.fieldValue.text.isEmpty()) {
+		if (inDoc.fieldValue.text.isEmpty()) {
 			Text(
 				"Write some Markdown…",
-				style = vEditorStyle.copy(color = JewelTheme.globalColors.text.info),
+				style = inStyle.copy(color = JewelTheme.globalColors.text.info),
 			)
 		}
 		BasicTextField(
-			value = vDoc.fieldValue,
-			onValueChange = { vDoc.fieldValue = it },
-			textStyle = vEditorStyle,
+			value = inDoc.fieldValue,
+			onValueChange = { inDoc.fieldValue = it },
+			textStyle = inStyle,
 			visualTransformation = vTransformation,
 			onTextLayout = inOnTextLayout,
 			cursorBrush = SolidColor(JewelTheme.globalColors.text.normal),
-			modifier = Modifier.fillMaxWidth(),
+			modifier = if (inWrap) Modifier.fillMaxWidth() else Modifier,
 		)
 	}
 }
@@ -940,6 +993,11 @@ private fun EditorSettings(inState: AppState) {
 		}
 	}
 	SliderRow("Font size", vSettings.editorFontSizeSp, 10f..24f) { vSettings.editorFontSizeSp = it }
+	Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+		Text("Word wrap", modifier = Modifier.width(120.dp))
+		Chip("On", vSettings.editorWordWrap) { vSettings.editorWordWrap = true }
+		Chip("Off", !vSettings.editorWordWrap) { vSettings.editorWordWrap = false }
+	}
 	GroupHeader("View")
 	Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 		Text("Status bar", modifier = Modifier.width(120.dp))
