@@ -136,6 +136,13 @@ compose.desktop {
 		// The `run` task uses the Gradle daemon JVM unless javaHome is set; the daemon
 		// may be a non-JBR JDK, which DecoratedWindow rejects. Force it onto the JBR.
 		javaHome = jbrLauncher.get().metadata.installationPath.asFile.absolutePath
+		// ProGuard is on by default for release builds in Compose Desktop, but JavaFX
+		// (Mermaid), Jewel, JNA and JBR rely on extensive reflection that would need
+		// hundreds of keep rules to shrink safely. Disabling it makes packageRelease* just
+		// bundle the JAR + JBR — larger but reliable, and that's what we ship in CI.
+		buildTypes.release.proguard {
+			isEnabled.set(false)
+		}
 		nativeDistributions {
 			targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Dmg)
 			packageName = "JewelMarkdown"
