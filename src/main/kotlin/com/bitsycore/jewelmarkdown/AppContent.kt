@@ -44,7 +44,6 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -543,11 +542,13 @@ private fun PreviewBody(inState: AppState, inDoc: Document, inModifier: Modifier
 // gap between them, matching IntelliJ's tab bar.
 @Composable
 private fun TabbedPane(inState: AppState, inCorner: Dp, inModifier: Modifier, inContent: @Composable BoxScope.() -> Unit) {
-	val vBorder = JewelTheme.globalColors.borders.normal
+	// Same faint wash the Pane border uses, so the divider between tab strip and body matches
+	// the card outline instead of standing out as a hard dark line.
+	val vSubtleLine = JewelTheme.globalColors.text.normal.copy(alpha = 0.1f)
 	Pane(inModifier, inCorner) {
 		Column(Modifier.fillMaxSize()) {
 			TabStrip(inState)
-			Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vBorder)
+			Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = vSubtleLine)
 			Box(modifier = Modifier.weight(1f).fillMaxWidth(), content = inContent)
 		}
 	}
@@ -603,17 +604,23 @@ private fun SplitHandle(inWidth: Dp, inOnDrag: (Float) -> Unit) {
 	}
 }
 
-// A bordered, rounded, shadowed panel (the IntelliJ tool-window card look).
+// A rounded panel (the IntelliJ tool-window card look). No drop-shadow; outlines and inner
+// dividers use a very faint white/black wash (alpha = 0.1 of the theme's text color) so the
+// cards have shape without harsh edges. In dark mode the surface is tinted slightly lighter
+// than the chrome so the editor reads as an inset "paper" against the ambient gradient.
 @Composable
 private fun Pane(inModifier: Modifier, inCornerDp: Dp, inContent: @Composable BoxScope.() -> Unit) {
 	val vShape = RoundedCornerShape(inCornerDp)
+	val vCardBg =
+		if (JewelTheme.isDark) Color(0xFF26282C)
+		else JewelTheme.globalColors.panelBackground
+	val vSubtleLine = JewelTheme.globalColors.text.normal.copy(alpha = 0.1f)
 	Box(
 		modifier =
 			inModifier
-				.shadow(2.dp, vShape)
 				.clip(vShape)
-				.background(JewelTheme.globalColors.panelBackground)
-				.border(1.dp, JewelTheme.globalColors.borders.normal, vShape),
+				.background(vCardBg)
+				.border(1.dp, vSubtleLine, vShape),
 		content = inContent,
 	)
 }
@@ -645,7 +652,11 @@ private fun EditorPane(inState: AppState, inDoc: Document, inModifier: Modifier)
 
 	Column(inModifier) {
 		MarkdownToolbar(inState)
-		Divider(Orientation.Horizontal, Modifier.fillMaxWidth(), color = JewelTheme.globalColors.borders.normal)
+		Divider(
+			Orientation.Horizontal,
+			Modifier.fillMaxWidth(),
+			color = JewelTheme.globalColors.text.normal.copy(alpha = 0.1f),
+		)
 		Box(
 			modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(vScrollState),
 		) {
