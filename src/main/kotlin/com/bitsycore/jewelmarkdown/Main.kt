@@ -50,6 +50,23 @@ private val kIsJbr: Boolean = runCatching { Class.forName("com.jetbrains.JBR") }
 // changes without having to pick a file from disk.
 private const val kFlagDemo = "--demo"
 
+// Attaches a Filter to every handler on the root j.u.l. logger that drops records whose
+// loggerName starts with any of the given prefixes. Used to mute JavaFX's "unsupported
+// JavaFX configuration" WARNING and Jewel's "missing IntelliJ SVG icon" SEVERE errors
+// without affecting application logging.
+private fun silenceNoisyLoggers(vararg inPrefixes: String) {
+	val vRoot = java.util.logging.LogManager.getLogManager().getLogger("") ?: return
+	val vMatchers = inPrefixes.toList()
+	for (vHandler in vRoot.handlers) {
+		val vExisting = vHandler.filter
+		vHandler.filter = java.util.logging.Filter { vRecord ->
+			val vName = vRecord.loggerName ?: ""
+			val vIsNoisy = vMatchers.any { vName.startsWith(it) }
+			if (vIsNoisy) false else (vExisting?.isLoggable(vRecord) ?: true)
+		}
+	}
+}
+
 // Application entry point. Builds the IntelliJ (Jewel) theme — dark by default — and opens a
 // window hosting the Markdown editor and live preview. On the JetBrains Runtime the window is
 // decorated by Jewel (custom TitleBar with the app menus). On any other JDK that API is absent
@@ -64,14 +81,11 @@ fun main(inArgs: Array<String>) {
 	// JavaFX prints an "Unsupported JavaFX configuration" warning when it's loaded from the
 	// classpath instead of the JPMS module path — harmless in a non-modular Compose Desktop
 	// app, but noisy in the run log. Jewel's standalone distribution likewise emits SEVERE
-	// errors for missing IntelliJ context-menu SVG icons (Cut/Copy/Paste in the editor's
-	// right-click menu); the menu items still work, only the glyphs are absent. Silence both.
-	// Level.SEVERE alone isn't enough — child loggers can pin their own level lower than the
-	// parent's, so we set OFF directly on the specific noisy loggers.
-	java.util.logging.Logger.getLogger("javafx").level = java.util.logging.Level.OFF
-	java.util.logging.Logger.getLogger("com.sun.javafx").level = java.util.logging.Level.OFF
-	java.util.logging.Logger.getLogger("com.sun.javafx.application.PlatformImpl").level = java.util.logging.Level.OFF
-	java.util.logging.Logger.getLogger("org.jetbrains.jewel").level = java.util.logging.Level.OFF
+	// errors for missing IntelliJ context-menu SVG icons. Logger-level filtering wasn't
+	// enough: PlatformImpl pins its own logger level, and Jewel's logger writes through
+	// `getLogger("")` so the level on a parent is ignored. Filter at the handler level
+	// instead — that's the last thing every record passes through before it hits stderr.
+	silenceNoisyLoggers("javafx", "com.sun.javafx", "org.jetbrains.jewel")
 
 	// macOS only: route the app's Swing JMenuBar to the system menu bar at the top of the
 	// screen instead of inside the window. Both properties must be set before AWT initializes.
@@ -100,6 +114,19 @@ private fun runApp(inArgs: Array<String>): Unit = application {
 	val vStyling = ComponentStyling.default().decoratedWindow()
 
 	IntUiTheme(vThemeDefinition, vStyling, false) {
+		// Override Jewel's IntelliJ-themed context menu (which loads expui/general/*.svg
+		// icons that aren't bundled in the standalone distribution — that's where the pink
+		// placeholder icons + GRAVE log noise came from) with Compose's built-in plain
+		// text-only context menu. The light/dark variant follows the current theme.
+		val vContextMenu =
+			if (vState.isDark) {
+				androidx.compose.foundation.DarkDefaultContextMenuRepresentation
+			} else {
+				androidx.compose.foundation.LightDefaultContextMenuRepresentation
+			}
+		androidx.compose.runtime.CompositionLocalProvider(
+			androidx.compose.foundation.LocalContextMenuRepresentation provides vContextMenu,
+		) {
 		val vOnClose: () -> Unit = {
 			Persistence.save(vState)
 			exitApplication()
@@ -179,6 +206,7 @@ private fun runApp(inArgs: Array<String>): Unit = application {
 					}
 				}
 			}
+		}
 		}
 	}
 }
