@@ -82,8 +82,13 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           set -e
+          # appimagetool ships as an AppImage and needs FUSE to mount itself at runtime.
+          # GitHub's ubuntu-latest images don't have libfuse, so we --appimage-extract first
+          # and invoke the extracted AppRun directly.
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
+          ./appimagetool --appimage-extract >/dev/null
+          APPIMAGETOOL=./squashfs-root/AppRun
 
           rm -rf AppDir
           mkdir -p AppDir/usr
@@ -123,7 +128,7 @@ jobs:
               f.write(sig + ihdr + idat + iend)
           PYEOF
 
-          ARCH=x86_64 ./appimagetool --no-appstream AppDir "${{ github.workspace }}/JewelMarkdown-x86_64.AppImage"
+          ARCH=x86_64 "$APPIMAGETOOL" --no-appstream AppDir "${{ github.workspace }}/JewelMarkdown-x86_64.AppImage"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
