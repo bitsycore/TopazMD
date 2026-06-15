@@ -63,9 +63,15 @@ fun main(inArgs: Array<String>) {
 
 	// JavaFX prints an "Unsupported JavaFX configuration" warning when it's loaded from the
 	// classpath instead of the JPMS module path — harmless in a non-modular Compose Desktop
-	// app, but noisy in the run log. Silence its informational loggers.
-	java.util.logging.Logger.getLogger("javafx").level = java.util.logging.Level.SEVERE
-	java.util.logging.Logger.getLogger("com.sun.javafx").level = java.util.logging.Level.SEVERE
+	// app, but noisy in the run log. Jewel's standalone distribution likewise emits SEVERE
+	// errors for missing IntelliJ context-menu SVG icons (Cut/Copy/Paste in the editor's
+	// right-click menu); the menu items still work, only the glyphs are absent. Silence both.
+	// Level.SEVERE alone isn't enough — child loggers can pin their own level lower than the
+	// parent's, so we set OFF directly on the specific noisy loggers.
+	java.util.logging.Logger.getLogger("javafx").level = java.util.logging.Level.OFF
+	java.util.logging.Logger.getLogger("com.sun.javafx").level = java.util.logging.Level.OFF
+	java.util.logging.Logger.getLogger("com.sun.javafx.application.PlatformImpl").level = java.util.logging.Level.OFF
+	java.util.logging.Logger.getLogger("org.jetbrains.jewel").level = java.util.logging.Level.OFF
 
 	// macOS only: route the app's Swing JMenuBar to the system menu bar at the top of the
 	// screen instead of inside the window. Both properties must be set before AWT initializes.

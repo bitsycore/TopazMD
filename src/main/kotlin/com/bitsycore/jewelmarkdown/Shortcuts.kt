@@ -6,6 +6,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 
@@ -36,21 +37,41 @@ enum class ShortcutAction(val displayName: String) {
 	OpenSettings("Open settings"),
 }
 
-// A keyboard shortcut: a key plus modifier flags.
-data class Shortcut(val key: Key, val ctrl: Boolean = false, val shift: Boolean = false, val alt: Boolean = false) {
+// A keyboard shortcut: a key plus modifier flags. `meta` is the Cmd key on macOS and the
+// Windows key on Windows; on macOS it's our "primary" modifier (Cmd+S, Cmd+D…) so it can be
+// captured and matched independently of Ctrl.
+data class Shortcut(
+	val key: Key,
+	val ctrl: Boolean = false,
+	val shift: Boolean = false,
+	val alt: Boolean = false,
+	val meta: Boolean = false,
+) {
 	// True when the given key event matches this shortcut exactly.
 	fun matches(inEvent: KeyEvent): Boolean =
 		inEvent.key == key &&
 			inEvent.isCtrlPressed == ctrl &&
 			inEvent.isShiftPressed == shift &&
-			inEvent.isAltPressed == alt
+			inEvent.isAltPressed == alt &&
+			inEvent.isMetaPressed == meta
 
-	// Human-readable label, e.g. "Ctrl+Shift+S".
+	// Human-readable label. On macOS we use the native modifier symbols with no "+" separator
+	// (e.g. "⇧⌘D"); on other platforms we keep the Windows/Linux convention of "Ctrl+Shift+D".
 	fun label(): String {
+		if (kIsMac) {
+			val vBuilder = StringBuilder()
+			if (ctrl) vBuilder.append('⌃')
+			if (alt) vBuilder.append('⌥')
+			if (shift) vBuilder.append('⇧')
+			if (meta) vBuilder.append('⌘')
+			vBuilder.append(keyDisplayName(key))
+			return vBuilder.toString()
+		}
 		val vParts = buildList {
 			if (ctrl) add("Ctrl")
 			if (shift) add("Shift")
 			if (alt) add("Alt")
+			if (meta) add("Win")
 			add(keyDisplayName(key))
 		}
 		return vParts.joinToString("+")
@@ -64,6 +85,9 @@ private fun keyDisplayName(inKey: Key): String =
 		Key.One -> "1"
 		Key.Two -> "2"
 		Key.Three -> "3"
+		Key.DirectionUp -> "↑"
+		Key.DirectionDown -> "↓"
+		Key.Comma -> ","
 		else -> inKey.toString().removePrefix("Key: ")
 	}
 
@@ -80,47 +104,79 @@ fun isModifierKey(inKey: Key): Boolean =
 
 // Builds a shortcut from a key event's key and currently-held modifiers.
 fun shortcutFromEvent(inEvent: KeyEvent): Shortcut =
-	Shortcut(inEvent.key, ctrl = inEvent.isCtrlPressed, shift = inEvent.isShiftPressed, alt = inEvent.isAltPressed)
+	Shortcut(
+		inEvent.key,
+		ctrl = inEvent.isCtrlPressed,
+		shift = inEvent.isShiftPressed,
+		alt = inEvent.isAltPressed,
+		meta = inEvent.isMetaPressed,
+	)
 
-// Encodes a shortcut to a string for persistence ("ctrl,shift,alt,keyCode").
-fun Shortcut.encode(): String = "$ctrl,$shift,$alt,${key.keyCode}"
+// Encodes a shortcut to a string for persistence ("ctrl,shift,alt,meta,keyCode"). The 5-part
+// format is the current schema; decodeShortcut also accepts the legacy 4-part format from
+// before macOS Cmd support was added.
+fun Shortcut.encode(): String = "$ctrl,$shift,$alt,$meta,${key.keyCode}"
 
-// Decodes a shortcut from its persisted string, or null if malformed.
 fun decodeShortcut(inText: String): Shortcut? {
 	val vParts = inText.split(",")
-	if (vParts.size != 4) return null
-	val vCtrl = vParts[0].toBooleanStrictOrNull() ?: return null
-	val vShift = vParts[1].toBooleanStrictOrNull() ?: return null
-	val vAlt = vParts[2].toBooleanStrictOrNull() ?: return null
-	val vCode = vParts[3].toLongOrNull() ?: return null
-	return Shortcut(Key(vCode), ctrl = vCtrl, shift = vShift, alt = vAlt)
+	return when (vParts.size) {
+		5 -> {
+			val vCtrl = vParts[0].toBooleanStrictOrNull() ?: return null
+			val vShift = vParts[1].toBooleanStrictOrNull() ?: return null
+			val vAlt = vParts[2].toBooleanStrictOrNull() ?: return null
+			val vMeta = vParts[3].toBooleanStrictOrNull() ?: return null
+			val vCode = vParts[4].toLongOrNull() ?: return null
+			Shortcut(Key(vCode), ctrl = vCtrl, shift = vShift, alt = vAlt, meta = vMeta)
+		}
+		4 -> {
+			// Legacy schema before the meta field existed; default meta = false.
+			val vCtrl = vParts[0].toBooleanStrictOrNull() ?: return null
+			val vShift = vParts[1].toBooleanStrictOrNull() ?: return null
+			val vAlt = vParts[2].toBooleanStrictOrNull() ?: return null
+			val vCode = vParts[3].toLongOrNull() ?: return null
+			Shortcut(Key(vCode), ctrl = vCtrl, shift = vShift, alt = vAlt)
+		}
+		else -> null
+	}
 }
 
-// The default Visual-Studio-style keymap.
+// Builds a "primary modifier" shortcut: Cmd on macOS, Ctrl elsewhere. Use this for shortcuts
+// that should follow the native platform convention (file ops, edit ops, view switches, etc.).
+private fun primary(inKey: Key, inShift: Boolean = false, inAlt: Boolean = false): Shortcut =
+	if (kIsMac) {
+		Shortcut(inKey, meta = true, shift = inShift, alt = inAlt)
+	} else {
+		Shortcut(inKey, ctrl = true, shift = inShift, alt = inAlt)
+	}
+
+// The default keymap. Editor shortcuts use the platform's primary modifier (Cmd on macOS,
+// Ctrl elsewhere). Move-line stays on Alt+Shift+arrows on both platforms — that's the IntelliJ
+// + VSCode convention everywhere.
 fun defaultKeymap(): SnapshotStateMap<ShortcutAction, Shortcut> {
 	val vMap = mutableStateMapOf<ShortcutAction, Shortcut>()
-	vMap[ShortcutAction.NewFile] = Shortcut(Key.N, ctrl = true)
-	vMap[ShortcutAction.OpenFile] = Shortcut(Key.O, ctrl = true)
-	vMap[ShortcutAction.OpenFolder] = Shortcut(Key.O, ctrl = true, shift = true)
-	vMap[ShortcutAction.Save] = Shortcut(Key.S, ctrl = true)
-	vMap[ShortcutAction.SaveAs] = Shortcut(Key.S, ctrl = true, shift = true)
-	vMap[ShortcutAction.CloseTab] = Shortcut(Key.W, ctrl = true)
-	vMap[ShortcutAction.Bold] = Shortcut(Key.B, ctrl = true)
-	vMap[ShortcutAction.Italic] = Shortcut(Key.I, ctrl = true)
-	vMap[ShortcutAction.InlineCode] = Shortcut(Key.Grave, ctrl = true)
-	vMap[ShortcutAction.Heading] = Shortcut(Key.H, ctrl = true, shift = true)
-	vMap[ShortcutAction.Quote] = Shortcut(Key.Q, ctrl = true, shift = true)
-	vMap[ShortcutAction.BulletList] = Shortcut(Key.L, ctrl = true, shift = true)
-	vMap[ShortcutAction.Link] = Shortcut(Key.K, ctrl = true)
-	vMap[ShortcutAction.DuplicateLine] = Shortcut(Key.D, ctrl = true)
-	vMap[ShortcutAction.DeleteLine] = Shortcut(Key.K, ctrl = true, shift = true)
+	vMap[ShortcutAction.NewFile] = primary(Key.N)
+	vMap[ShortcutAction.OpenFile] = primary(Key.O)
+	vMap[ShortcutAction.OpenFolder] = primary(Key.O, inShift = true)
+	vMap[ShortcutAction.Save] = primary(Key.S)
+	vMap[ShortcutAction.SaveAs] = primary(Key.S, inShift = true)
+	vMap[ShortcutAction.CloseTab] = primary(Key.W)
+	vMap[ShortcutAction.Bold] = primary(Key.B)
+	vMap[ShortcutAction.Italic] = primary(Key.I)
+	vMap[ShortcutAction.InlineCode] = primary(Key.Grave)
+	vMap[ShortcutAction.Heading] = primary(Key.H, inShift = true)
+	vMap[ShortcutAction.Quote] = primary(Key.Q, inShift = true)
+	vMap[ShortcutAction.BulletList] = primary(Key.L, inShift = true)
+	vMap[ShortcutAction.Link] = primary(Key.K)
+	vMap[ShortcutAction.DuplicateLine] = primary(Key.D)
+	vMap[ShortcutAction.DeleteLine] = primary(Key.K, inShift = true)
 	vMap[ShortcutAction.MoveLineUp] = Shortcut(Key.DirectionUp, alt = true, shift = true)
 	vMap[ShortcutAction.MoveLineDown] = Shortcut(Key.DirectionDown, alt = true, shift = true)
-	vMap[ShortcutAction.SelectLine] = Shortcut(Key.L, ctrl = true)
-	vMap[ShortcutAction.ToggleProjectPanel] = Shortcut(Key.E, ctrl = true, shift = true)
-	vMap[ShortcutAction.ViewEditor] = Shortcut(Key.One, ctrl = true)
-	vMap[ShortcutAction.ViewSplit] = Shortcut(Key.Two, ctrl = true)
-	vMap[ShortcutAction.ViewPreview] = Shortcut(Key.Three, ctrl = true)
-	vMap[ShortcutAction.OpenSettings] = Shortcut(Key.S, ctrl = true, alt = true)
+	vMap[ShortcutAction.SelectLine] = primary(Key.L)
+	vMap[ShortcutAction.ToggleProjectPanel] = primary(Key.E, inShift = true)
+	vMap[ShortcutAction.ViewEditor] = primary(Key.One)
+	vMap[ShortcutAction.ViewSplit] = primary(Key.Two)
+	vMap[ShortcutAction.ViewPreview] = primary(Key.Three)
+	vMap[ShortcutAction.OpenSettings] =
+		if (kIsMac) Shortcut(Key.Comma, meta = true) else Shortcut(Key.S, ctrl = true, alt = true)
 	return vMap
 }
